@@ -1799,7 +1799,7 @@ export function CarDetail() {
                 </button>
               )}
               <p className="pt-2 text-center text-[10px] leading-3 text-pace-hint">
-                Báo giá có hiệu lực 15 phút · Policy {quote?.policyVersion}
+                Báo giá có hiệu lực 15 phút
               </p>
               <p className="text-center text-[11px] leading-4 text-pace-muted">
                 Giá cuối cùng do bên cho thuê xác nhận trước khi giao kết hợp
@@ -2550,7 +2550,7 @@ export function LegalInformation() {
         ],
         [
           "Cập nhật và thông tin chưa công bố",
-          `Phiên bản nháp ${"PC-TERMS-2026.2-DRAFT"}. Tên pháp nhân vận hành, ngày hiệu lực, chính sách bảo vệ dữ liệu cá nhân và điều kiện hủy/hoàn tiền chuẩn của nền tảng: chưa công bố, sẽ được bổ sung sau khi đơn vị vận hành xác nhận. Liên hệ hello@pacecar.vn khi cần hỗ trợ.`,
+          `Tên pháp nhân vận hành, ngày hiệu lực, chính sách bảo vệ dữ liệu cá nhân và điều kiện hủy/hoàn tiền chuẩn của nền tảng: chưa công bố, sẽ được bổ sung sau khi đơn vị vận hành xác nhận. Liên hệ hello@pacecar.vn khi cần hỗ trợ.`,
         ],
       ];
   return (
@@ -4400,8 +4400,8 @@ function BookingQuoteFlow({ carId, quoteId }) {
                 Tôi đã đọc và đồng ý với{" "}
                 <Link to="/terms" target="_blank" className="font-semibold text-brand-700 underline">
                   Điều khoản sử dụng
-                </Link>{" "}
-                (phiên bản {quote.termsVersion}).
+                </Link>
+                .
               </span>
             </label>
             <label className="mt-3 flex items-start gap-3 rounded-xl bg-slate-50 p-4 text-sm">
@@ -4478,9 +4478,6 @@ function BookingQuoteFlow({ carId, quoteId }) {
             >
               {submitting ? "Đang gửi yêu cầu..." : "Gửi yêu cầu kết nối"}
             </Button>
-            <p className="mt-3 text-center text-[11px] text-slate-400">
-              Quote {quote.quoteId.slice(0, 8)} · {quote.policyVersion}
-            </p>
           </div>
         </aside>
       </div>

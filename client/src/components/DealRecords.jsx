@@ -410,7 +410,7 @@ export function AdminDealsPanel() {
               </form>
               {preview && (
                 <p className="mt-2 text-sm">
-                  {money(preview.baseAmount)} × {preview.rate * 100}% = <b>{money(preview.amount)}</b> ({preview.policyVersion})
+                  {money(preview.baseAmount)} × {preview.rate * 100}% = <b>{money(preview.amount)}</b>
                 </p>
               )}
               <p className="mt-3 text-sm text-slate-600">Đã ghi nhận thử: {state.commissions.length} giao dịch.</p>
