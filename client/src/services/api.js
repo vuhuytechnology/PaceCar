@@ -14,6 +14,8 @@ async function responseError(response) {
   const error = new Error(payload.message || `API lỗi ${response.status}`);
   error.status = response.status;
   error.details = payload.errors || payload.fields || [];
+  error.code = payload.code;
+  error.email = payload.email;
   return error;
 }
 

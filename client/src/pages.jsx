@@ -1907,6 +1907,12 @@ export function Login() {
           next?.startsWith("/") && !next.startsWith("//") ? next : null;
       nav(safeNext || "/dashboard/" + u.role);
     } catch (error) {
+      if (error.code === "EMAIL_NOT_VERIFIED") {
+        nav(
+          `/verify-email?email=${encodeURIComponent(error.email || email)}${search.get("next") ? `&next=${encodeURIComponent(search.get("next"))}` : ""}`,
+        );
+        return;
+      }
       setErr(error.message);
     } finally {
       setSubmitting(false);
@@ -2130,11 +2136,19 @@ export function Register() {
           acceptTerms: values.acceptTerms,
         }),
       });
-      login(user);
-      toast("Tài khoản đã sẵn sàng");
       const next = search.get("next");
       const safeNext =
         next?.startsWith("/") && !next.startsWith("//") ? next : null;
+      if (user.requiresEmailVerification) {
+        toast("Đã gửi mã xác thực đến email của bạn");
+        nav(
+          `/verify-email?email=${encodeURIComponent(user.email)}${safeNext ? `&next=${encodeURIComponent(safeNext)}` : ""}`,
+          { replace: true },
+        );
+        return;
+      }
+      login(user);
+      toast("Tài khoản đã sẵn sàng");
       nav(safeNext || `/dashboard/${user.role}`, { replace: true });
     } catch (error) {
       const fieldErrors =
@@ -2484,6 +2498,110 @@ export function Register() {
           </form>
         </div>
       </div>
+    </section>
+  );
+}
+
+export function VerifyEmail() {
+  const nav = useNavigate();
+  const toast = useToast();
+  const { login } = useAuth();
+  const [search] = useSearchParams();
+  const email = search.get("email") || "";
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function submit(event) {
+    event.preventDefault();
+    if (busy) return;
+    if (!/^\d{6}$/u.test(code)) {
+      setError("Nhập mã gồm 6 chữ số.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const user = await api("/auth/verify-email", {
+        method: "POST",
+        body: JSON.stringify({ email, code }),
+      });
+      login(user);
+      toast("Email đã được xác thực");
+      const next = search.get("next");
+      const safeNext =
+        next?.startsWith("/") && !next.startsWith("//") ? next : null;
+      nav(safeNext || `/dashboard/${user.role}`, { replace: true });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function resend() {
+    setError("");
+    setInfo("");
+    try {
+      await api("/auth/resend-email-code", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      });
+      setInfo("Nếu email hợp lệ, mã mới đã được gửi.");
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+  return (
+    <section className="-mb-20 flex min-h-[620px] items-center justify-center bg-pace-page px-5 py-10 font-ui">
+      <form
+        onSubmit={submit}
+        noValidate
+        className="flex w-full max-w-[460px] flex-col gap-4 rounded-[12px] bg-white p-6 shadow-card-pop sm:p-8"
+      >
+        <h1 className="font-display text-[32px] font-extrabold uppercase leading-9 text-pace-ink">
+          Xác thực email
+        </h1>
+        <p className="text-sm leading-[21px] text-pace-muted">
+          {email
+            ? `Chúng tôi đã gửi mã gồm 6 chữ số đến ${email}. Mã có hiệu lực trong 15 phút.`
+            : "Thiếu địa chỉ email cần xác thực."}
+        </p>
+        <label className="text-xs font-semibold text-pace-ink" htmlFor="email-code">
+          Mã xác thực
+        </label>
+        <input
+          id="email-code"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          maxLength={6}
+          value={code}
+          onChange={(e) => {
+            setCode(e.target.value.replace(/\D/gu, ""));
+            setError("");
+          }}
+          className="h-12 w-full rounded-[2px] border-[0.8px] border-pace-line px-4 text-center text-xl tracking-[0.4em] outline-none focus:border-pace-blue focus:ring-4 focus:ring-pace-blue/20"
+        />
+        {error && (
+          <p role="alert" className="text-xs text-red-700">
+            {error}
+          </p>
+        )}
+        {info && <p className="text-xs text-emerald-700">{info}</p>}
+        <Button disabled={busy || !email}>
+          {busy ? "Đang xác thực..." : "Xác thực"}
+        </Button>
+        <button
+          type="button"
+          onClick={resend}
+          disabled={!email}
+          className="text-sm font-semibold text-pace-blue hover:underline"
+        >
+          Gửi lại mã
+        </button>
+        <Link to="/login" className="text-center text-sm text-pace-muted hover:underline">
+          Quay lại đăng nhập
+        </Link>
+      </form>
     </section>
   );
 }

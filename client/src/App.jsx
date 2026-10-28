@@ -21,6 +21,7 @@ import {
   CarDetail,
   Login,
   Register,
+  VerifyEmail,
   LegalInformation,
   Booking,
   RenterDashboard,
@@ -56,6 +57,7 @@ export default function App() {
           <Route path="/cars/:id" element={<CarDetail />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/terms" element={<LegalInformation />} />
           <Route path="/privacy" element={<LegalInformation />} />
           <Route path="/booking/:carId" element={<Booking />} />

@@ -48,6 +48,9 @@ const server = spawn(process.execPath, ["src/index.js"], {
     PACECAR_UPLOAD_DIR: path.join(tempDir, "uploads"),
     CLIENT_ORIGIN: "http://localhost:5173",
     COMMISSION_TRIAL_ENABLED: "true",
+    EMAIL_VERIFICATION_ENABLED: "true",
+    MAIL_TRANSPORT: "file",
+    MAIL_OUTBOX_FILE: path.join(tempDir, "outbox.jsonl"),
   },
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -380,6 +383,79 @@ try {
   assert.equal((await request("/cars")).status, 200);
   assert.equal((await request("/search/cars?location=H%C3%A0%20N%E1%BB%99i")).status, 200);
   assert.equal((await request("/cars/1")).status, 200);
+
+  // Email verification at registration.
+  const outbox = path.join(tempDir, "outbox.jsonl");
+  const lastCode = (to) => {
+    const lines = fs.readFileSync(outbox, "utf8").trim().split("\n").map(JSON.parse);
+    const mail = lines.filter((m) => m.to === to).at(-1);
+    return mail.text.match(/\b(\d{6})\b/u)[1];
+  };
+  const reg = {
+    name: "Nguoi Moi",
+    email: "moi@example.com",
+    phone: "0901234567",
+    password: "matkhau123",
+    role: "renter",
+    acceptTerms: true,
+  };
+  const registered = await send("/auth/register", "POST", null, reg);
+  assert.equal(registered.status, 201, json(registered.body));
+  assert.equal(registered.body.requiresEmailVerification, true);
+  assert.equal(registered.body.token, undefined, "no session before verification");
+  assert.equal(registered.body.passwordHash, undefined);
+  const blocked = await send("/auth/login", "POST", null, {
+    email: reg.email,
+    password: reg.password,
+  });
+  assert.equal(blocked.status, 403);
+  assert.equal(blocked.body.code, "EMAIL_NOT_VERIFIED");
+  const code = lastCode(reg.email);
+  const wrong = String((Number(code) + 1) % 1_000_000).padStart(6, "0");
+  assert.equal(
+    (await send("/auth/verify-email", "POST", null, { email: reg.email, code: wrong })).status,
+    400,
+  );
+  const early = await send("/auth/resend-email-code", "POST", null, { email: reg.email });
+  assert.equal(early.status, 429, "resend cooldown");
+  const verified = await send("/auth/verify-email", "POST", null, { email: reg.email, code });
+  assert.equal(verified.status, 200, json(verified.body));
+  assert.ok(verified.body.token);
+  assert.equal(verified.body.emailVerified, true);
+  assert.equal(verified.body.emailVerification, undefined);
+  assert.equal(
+    (await send("/auth/verify-email", "POST", null, { email: reg.email, code })).status,
+    400,
+    "code cannot be reused",
+  );
+  assert.equal(
+    (await send("/auth/login", "POST", null, { email: reg.email, password: reg.password })).status,
+    200,
+  );
+  assert.equal(
+    (await send("/auth/register", "POST", null, reg)).status,
+    409,
+    "verified email cannot be re-registered",
+  );
+  // Brute force: 5 wrong attempts invalidate the code even if the right one follows.
+  const bf = { ...reg, email: "bf@example.com" };
+  assert.equal((await send("/auth/register", "POST", null, bf)).status, 201);
+  const bfCode = lastCode(bf.email);
+  const bfWrong = String((Number(bfCode) + 1) % 1_000_000).padStart(6, "0");
+  for (let i = 0; i < 5; i += 1)
+    await send("/auth/verify-email", "POST", null, { email: bf.email, code: bfWrong });
+  assert.equal(
+    (await send("/auth/verify-email", "POST", null, { email: bf.email, code: bfCode })).status,
+    400,
+  );
+  // Re-registering an unverified address replaces the unactivated account.
+  assert.equal((await send("/auth/register", "POST", null, bf)).status, 201);
+  assert.equal(
+    (await send("/auth/verify-email", "POST", null, { email: bf.email, code: lastCode(bf.email) })).status,
+    200,
+  );
+  // Legacy users without the field keep logging in.
+  assert.equal((await send("/auth/login", "POST", null, { email: "renter@pacecar.vn", password: "123456" })).status, 200);
 
   console.log("PaceCar terms, price confirmation, refund record, report and commission-trial tests passed.");
 } finally {

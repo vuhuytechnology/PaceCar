@@ -10,6 +10,7 @@ import crypto from "node:crypto";
 import { read, write } from "./data/store.js";
 import { TERMS_STATUS, TERMS_VERSION } from "./policy.js";
 import { hasPendingPriceRevision, registerDealRoutes } from "./dealRoutes.js";
+import { emailVerificationEnabled, sendMail } from "./mailer.js";
 const app = express();
 app.set("trust proxy", process.env.TRUST_PROXY || "loopback");
 app.use(
@@ -49,7 +50,10 @@ const publicUser = (user) =>
   user &&
   Object.fromEntries(
     Object.entries(user).filter(
-      ([key]) => !["password", "passwordHash", "consents"].includes(key),
+      ([key]) =>
+        !["password", "passwordHash", "consents", "emailVerification"].includes(
+          key,
+        ),
     ),
   );
 const publicOwnerSummary = (user) =>
@@ -891,6 +895,94 @@ app.get(
     res.type(asset.mimeType).sendFile(path.join(documentDir, asset.filename));
   },
 );
+const EMAIL_CODE_TTL_MS = 15 * 60 * 1000;
+const EMAIL_CODE_MAX_ATTEMPTS = 5;
+const EMAIL_RESEND_COOLDOWN_MS = 60 * 1000;
+const emailCodeHash = (email, code) =>
+  crypto.createHash("sha256").update(`${email}:${code}`).digest("hex");
+function issueEmailCode(user) {
+  const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
+  const now = Date.now();
+  user.emailVerified = false;
+  user.emailVerification = {
+    codeHash: emailCodeHash(user.email, code),
+    expiresAt: new Date(now + EMAIL_CODE_TTL_MS).toISOString(),
+    sentAt: new Date(now).toISOString(),
+    attempts: 0,
+  };
+  return code;
+}
+const sendVerificationEmail = (to, code) =>
+  sendMail({
+    to,
+    subject: "Mã xác thực email PaceCar",
+    text: `Mã xác thực PaceCar của bạn là ${code}. Mã có hiệu lực trong 15 phút. Nếu bạn không đăng ký tài khoản PaceCar, hãy bỏ qua email này.`,
+  });
+const emailVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Bạn thử quá nhiều lần, vui lòng thử lại sau" },
+});
+app.post("/api/auth/verify-email", emailVerifyLimiter, (q, s) => {
+  const d = read(),
+    email = String(q.body.email || "").trim().toLowerCase(),
+    code = String(q.body.code || "").trim();
+  const invalid = () =>
+    s.status(400).json({ message: "Mã xác thực không đúng hoặc đã hết hạn." });
+  const u = d.users.find((x) => String(x.email).toLowerCase() === email);
+  const v = u?.emailVerification;
+  if (!u || u.emailVerified !== false || !v || !/^\d{6}$/u.test(code))
+    return invalid();
+  if (new Date(v.expiresAt) <= new Date() || v.attempts >= EMAIL_CODE_MAX_ATTEMPTS)
+    return invalid();
+  const expected = Buffer.from(v.codeHash, "hex"),
+    given = Buffer.from(emailCodeHash(u.email, code), "hex");
+  if (!crypto.timingSafeEqual(expected, given)) {
+    v.attempts += 1;
+    write(d);
+    return invalid();
+  }
+  const now = new Date();
+  u.emailVerified = true;
+  u.emailVerifiedAt = now.toISOString();
+  delete u.emailVerification;
+  const token = crypto.randomBytes(32).toString("hex");
+  d.sessions.push({
+    id: nextId(d.sessions),
+    userId: u.id,
+    tokenHash: tokenHash(token),
+    createdAt: now.toISOString(),
+    expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+  });
+  write(d);
+  s.json({ ...publicUser(u), token });
+});
+app.post("/api/auth/resend-email-code", emailVerifyLimiter, async (q, s) => {
+  const email = String(q.body.email || "").trim().toLowerCase();
+  const generic = { ok: true };
+  if (!emailVerificationEnabled()) return s.json(generic);
+  const d = read();
+  const u = d.users.find((x) => String(x.email).toLowerCase() === email);
+  if (!u || u.emailVerified !== false) return s.json(generic);
+  const sentAt = new Date(u.emailVerification?.sentAt || 0).getTime();
+  if (Date.now() - sentAt < EMAIL_RESEND_COOLDOWN_MS)
+    return s.status(429).json({
+      message: "Vui lòng đợi khoảng 1 phút trước khi gửi lại mã.",
+    });
+  const code = issueEmailCode(u);
+  write(d);
+  try {
+    await sendVerificationEmail(u.email, code);
+  } catch (error) {
+    console.error("Verification email failed:", error.message);
+    return s
+      .status(502)
+      .json({ message: "Chưa thể gửi email xác thực. Vui lòng thử lại sau." });
+  }
+  s.json(generic);
+});
 app.post("/api/auth/login", loginLimiter, (q, s) => {
   const d = read(),
     password = String(q.body.password || "");
@@ -903,6 +995,12 @@ app.post("/api/auth/login", loginLimiter, (q, s) => {
   );
   if (!u || password.length > 128 || !verifyPassword(password, u.passwordHash))
     return s.status(401).json({ message: "Email hoặc mật khẩu không đúng" });
+  if (u.emailVerified === false)
+    return s.status(403).json({
+      code: "EMAIL_NOT_VERIFIED",
+      message: "Vui lòng xác thực email trước khi đăng nhập.",
+      email: u.email,
+    });
   d.sessions = d.sessions.filter(
     (session) => new Date(session.expiresAt) > new Date(),
   );
@@ -940,7 +1038,7 @@ app.post("/api/auth/logout", (req, res) => {
   }
   res.json({ ok: true });
 });
-app.post("/api/auth/register", registerLimiter, (q, s) => {
+app.post("/api/auth/register", registerLimiter, async (q, s) => {
   const d = read(),
     name = String(q.body.name || "").trim(),
     email = String(q.body.email || "")
@@ -975,11 +1073,15 @@ app.post("/api/auth/register", registerLimiter, (q, s) => {
       message: "Vui lòng kiểm tra lại thông tin đăng ký.",
       fields,
     });
-  if (d.users.some((x) => String(x.email).toLowerCase() === email))
+  const needsVerification = emailVerificationEnabled();
+  const existing = d.users.find((x) => String(x.email).toLowerCase() === email);
+  // An unverified, never-activated account must not block the real mailbox owner.
+  if (existing && !(needsVerification && existing.emailVerified === false))
     return s.status(409).json({
       message: "Email đã tồn tại.",
       fields: { email: "Email này đã được sử dụng." },
     });
+  if (existing) d.users = d.users.filter((x) => x.id !== existing.id);
   const now = new Date();
   const token = crypto.randomBytes(32).toString("hex");
   const u = {
@@ -997,6 +1099,26 @@ app.post("/api/auth/register", registerLimiter, (q, s) => {
       acceptedAt: now.toISOString(),
     },
   };
+  if (needsVerification) {
+    const code = issueEmailCode(u);
+    d.users.push(u);
+    write(d);
+    try {
+      await sendVerificationEmail(u.email, code);
+    } catch (error) {
+      console.error("Verification email failed:", error.message);
+      const fresh = read();
+      fresh.users = fresh.users.filter((x) => x.id !== u.id);
+      write(fresh);
+      return s.status(502).json({
+        message: "Chưa thể gửi email xác thực. Vui lòng thử lại sau.",
+      });
+    }
+    return s.status(201).json({
+      requiresEmailVerification: true,
+      email: u.email,
+    });
+  }
   d.users.push(u);
   d.sessions.push({
     id: nextId(d.sessions),
