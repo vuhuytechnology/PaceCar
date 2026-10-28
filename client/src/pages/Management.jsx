@@ -135,7 +135,7 @@ export function MyBookings() {
         method: "POST",
         body: JSON.stringify({ method: "demo" }),
       });
-      toast.success("Đã ghi nhận thanh toán tiền cọc (mô phỏng)");
+      toast.success("Đã ghi nhận thanh toán tiền cọc");
       load();
     } catch (paymentError) {
       toast.error(paymentError.message);
@@ -174,7 +174,7 @@ export function MyBookings() {
       b.paymentStatus !== "Paid" ? (
       <Button disabled={payingId === b.id} onClick={() => payDeposit(b)}>
         <Wallet size={16} />
-        {payingId === b.id ? "Đang xử lý..." : "Thanh toán cọc (demo)"}
+        {payingId === b.id ? "Đang xử lý..." : "Thanh toán cọc"}
       </Button>
     ) : null;
   return (
@@ -238,7 +238,7 @@ export function MyBookings() {
                 )}
                 {b.paymentStatus === "Paid" && (
                   <p className="mt-1 text-xs font-bold text-emerald-600">
-                    ✓ Đã thanh toán tiền cọc (mô phỏng)
+                    ✓ Đã thanh toán tiền cọc
                   </p>
                 )}
                 <div className="mt-2 flex gap-2">

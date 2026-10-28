@@ -2500,15 +2500,15 @@ export function LegalInformation() {
         ],
         [
           "Cách sử dụng dữ liệu",
-          "Thông tin hồ sơ được dùng để vận hành tài khoản, hỗ trợ đặt xe và bảo vệ các giao dịch trong ứng dụng. Không nhập thông tin thanh toán thật hoặc dữ liệu nhạy cảm vào bản demo.",
+          "Thông tin hồ sơ được dùng để vận hành tài khoản, hỗ trợ đặt xe và bảo vệ các giao dịch trong ứng dụng.",
         ],
         [
           "Lưu trữ và bảo vệ",
-          "Bản demo lưu dữ liệu trên máy chủ của môi trường đang chạy; thời hạn lưu và tính bền vững phụ thuộc cấu hình triển khai. Không có tích hợp thanh toán thật trong bản demo.",
+          "PaceCar lưu dữ liệu trên máy chủ của hệ thống; thời hạn lưu và tính bền vững phụ thuộc cấu hình triển khai.",
         ],
         [
           "Quyền riêng tư",
-          "Liên hệ hello@pacecar.vn để hỏi về hồ sơ của bạn. Trước khi mở dịch vụ production, đơn vị vận hành cần xác nhận chính sách này, thời hạn lưu và quy trình yêu cầu dữ liệu phù hợp pháp luật.",
+          "Liên hệ hello@pacecar.vn để hỏi về hồ sơ của bạn.",
         ],
       ]
     : [
@@ -2538,7 +2538,7 @@ export function LegalInformation() {
         ],
         [
           "Hủy xe, bàn giao và nhiên liệu",
-          "Nếu chủ xe hủy sau xác nhận, PaceCar ưu tiên tìm xe thay thế hoặc hoàn lại đầy đủ khoản đã thanh toán trong bản demo, đồng thời ghi nhận vi phạm của chủ xe. Hai bên phải chụp ảnh, ghi ODO và mức nhiên liệu khi nhận/trả; mặc định giao đầy – trả đầy và nhiên liệu sử dụng không nằm trong giá thuê.",
+          "Nếu chủ xe hủy sau xác nhận, PaceCar ưu tiên tìm xe thay thế hoặc hoàn lại đầy đủ khoản đã thanh toán, đồng thời ghi nhận vi phạm của chủ xe. Hai bên phải chụp ảnh, ghi ODO và mức nhiên liệu khi nhận/trả; mặc định giao đầy – trả đầy và nhiên liệu sử dụng không nằm trong giá thuê.",
         ],
         [
           "Giao dịch ngoài nền tảng",
@@ -2553,13 +2553,9 @@ export function LegalInformation() {
       >
         ← Quay lại đăng ký
       </Link>
-      <p className="mt-8 text-sm font-bold uppercase tracking-wider text-brand-700">
-        PACECAR · BẢN DEMO
-      </p>
-      <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">
+      <h1 className="mt-8 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">
         {title}
       </h1>
-      <p className="mt-3 text-sm text-slate-500">Cập nhật: 8 tháng 10, 2026</p>
       <div className="mt-8 space-y-5">
         {sections.map(([heading, content]) => (
           <section className="card p-5 sm:p-7" key={heading}>
@@ -2568,10 +2564,6 @@ export function LegalInformation() {
           </section>
         ))}
       </div>
-      <p className="mt-6 text-xs leading-5 text-slate-500">
-        Tài liệu này mô tả hành vi của bản demo, không phải ý kiến tư vấn pháp
-        lý. Đơn vị vận hành cần phê duyệt nội dung áp dụng cho dịch vụ thực tế.
-      </p>
     </div>
   );
 }
@@ -3324,7 +3316,7 @@ export function Contract() {
                 `Trả xe: ${b.returnLocation}`,
                 `Tổng thanh toán: ${money(b.totalPrice)}`,
                 `Tiền cọc hoàn lại: ${money(b.deposit)}`,
-                `Trạng thái tiền cọc: ${b.paymentStatus === "Paid" ? "Đã thanh toán (mô phỏng)" : b.paymentStatus === "Unpaid" ? "Chưa thanh toán" : "Chưa áp dụng"}`,
+                `Trạng thái tiền cọc: ${b.paymentStatus === "Paid" ? "Đã thanh toán" : b.paymentStatus === "Unpaid" ? "Chưa thanh toán" : "Chưa áp dụng"}`,
               ]}
             />
           </div>
@@ -4085,7 +4077,7 @@ function LegacyBookingV2() {
             <div>
               <h2 className="text-xl font-bold">Xác thực giấy tờ</h2>
               <p className="mt-2 text-sm text-slate-500">
-                Bản demo chỉ mô phỏng việc chọn tệp, không lưu ảnh thật.
+                Chọn tệp minh chứng cho từng loại giấy tờ.
               </p>
               <div className="mt-6 grid gap-4 sm:grid-cols-2">
                 {[
@@ -4106,7 +4098,7 @@ function LegacyBookingV2() {
                     <span className="mt-1 block text-xs text-slate-500">
                       {docs[key]
                         ? "Đã chọn tệp minh chứng"
-                        : "Nhấn để chọn tệp demo"}
+                        : "Nhấn để chọn tệp"}
                     </span>
                   </button>
                 ))}
