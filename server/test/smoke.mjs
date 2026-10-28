@@ -4,7 +4,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { TERMS_VERSION } from "../src/policy.js";
 
+const consentFor = (quote) => ({
+  policyVersion: quote.policyVersion,
+  termsVersion: TERMS_VERSION,
+  termsAccepted: true,
+  roleAcknowledged: true,
+});
 const serverDir = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
@@ -74,6 +81,37 @@ try {
   const owner = await login("owner@pacecar.vn");
   const unrelatedOwner = await login("tung@pacecar.vn");
   const admin = await login("admin@pacecar.vn");
+
+  const renterDashboard = await request("/dashboard/renter/1", {
+    token: renter,
+  });
+  assert.equal(renterDashboard.status, 200);
+  assert.equal(renterDashboard.body.user.trustScore, 88);
+  assert.equal(renterDashboard.body.user.riskLevel, "Low");
+  assert.ok(Array.isArray(renterDashboard.body.bookings));
+  const ownerDashboard = await request("/dashboard/owner/4", { token: owner });
+  assert.equal(ownerDashboard.status, 200);
+  assert.ok(Array.isArray(ownerDashboard.body.cars));
+  assert.ok(Array.isArray(ownerDashboard.body.calendar));
+  assert.ok(Array.isArray(ownerDashboard.body.alerts));
+  const adminDashboard = await request("/dashboard/admin", { token: admin });
+  assert.equal(adminDashboard.status, 200);
+  assert.ok(Array.isArray(adminDashboard.body.disputes));
+  assert.ok(Array.isArray(adminDashboard.body.riskAlerts));
+  assert.ok(adminDashboard.body.users.every((user) => !("passwordHash" in user)));
+  assert.equal(
+    (await request("/dashboard/admin", { token: renter })).status,
+    403,
+  );
+  assert.equal(
+    (await request("/dashboard/owner/5", { token: owner })).status,
+    403,
+  );
+  // Commission trial stays off unless COMMISSION_TRIAL_ENABLED=true.
+  assert.equal(
+    (await request("/admin/commission/policy", { token: admin })).status,
+    403,
+  );
 
   const reconciledBookings = await request("/bookings", { token: admin });
   assert.equal(
@@ -178,7 +216,7 @@ try {
   );
   assert.equal(
     storedRegisteredUser.consents.termsVersion,
-    "pacecar-demo-2026-10-07",
+    TERMS_VERSION,
   );
   assert.ok(storedRegisteredUser.consents.acceptedAt);
   assert.ok(
@@ -264,6 +302,42 @@ try {
   const unratedSearchCar = searchResults.body.items.find((car) => car.id === 1);
   assert.equal(unratedSearchCar.reviewCount, 0);
   assert.equal(unratedSearchCar.rating, null);
+  const filteredSearch = await request(
+    "/search/cars?location=H%C3%A0%20N%E1%BB%99i&type=SUV&minPrice=1000000&maxPrice=1300000&seats=5&driverOption=self&sort=price-asc",
+  );
+  assert.equal(filteredSearch.status, 200);
+  assert.ok(filteredSearch.body.items.length > 0);
+  assert.ok(
+    filteredSearch.body.items.every(
+      (car) =>
+        car.location.includes("Hà Nội") &&
+        car.type === "SUV" &&
+        car.pricePerDay >= 1000000 &&
+        car.pricePerDay <= 1300000 &&
+        car.seats >= 5 &&
+        car.selfDriveAvailable,
+    ),
+  );
+  assert.deepEqual(
+    filteredSearch.body.items.map((car) => car.pricePerDay),
+    [...filteredSearch.body.items]
+      .map((car) => car.pricePerDay)
+      .sort((a, b) => a - b),
+  );
+  const deliverySearch = await request("/search/cars?delivery=true");
+  assert.equal(deliverySearch.status, 200);
+  assert.ok(
+    deliverySearch.body.items.every(
+      (car) => car.deliveryOptions?.ownerDelivery === true,
+    ),
+  );
+  const vehicleDetail = await request("/cars/2");
+  assert.equal(vehicleDetail.status, 200);
+  assert.ok(vehicleDetail.body.photos.length >= 1);
+  assert.ok(vehicleDetail.body.rules);
+  assert.equal(vehicleDetail.body.owner.trustScore, 86);
+  assert.equal(typeof vehicleDetail.body.reviewCount, "number");
+  assert.equal(typeof vehicleDetail.body.rating, "number");
   const unratedDetail = await request("/cars/1");
   assert.equal(unratedDetail.body.reviewCount, 0);
   assert.equal(unratedDetail.body.rating, null);
@@ -398,6 +472,46 @@ try {
   assert.equal(sameDayQuote.body.outsideHoursCount, 2);
   assert.equal(sameDayQuote.body.outsideHoursFee, 200000);
   assert.equal(sameDayQuote.body.policyVersion, "PC-2026.3");
+  assert.equal(sameDayQuote.body.baseRental, sameDayQuote.body.pricePerDay);
+  assert.equal(typeof sameDayQuote.body.platformFee, "number");
+  assert.equal(typeof sameDayQuote.body.insuranceFee, "number");
+  assert.equal(typeof sameDayQuote.body.deliveryFee, "number");
+  assert.equal(typeof sameDayQuote.body.deposit, "number");
+  assert.equal(
+    sameDayQuote.body.totalPrice,
+    Math.max(
+      0,
+      sameDayQuote.body.baseRental +
+        sameDayQuote.body.weekendSurcharge +
+        sameDayQuote.body.driverFee -
+        sameDayQuote.body.longRentalDiscount +
+        sameDayQuote.body.platformFee +
+        sameDayQuote.body.insuranceFee +
+        sameDayQuote.body.deliveryFee +
+        sameDayQuote.body.outsideHoursFee -
+        sameDayQuote.body.promoDiscount,
+    ),
+  );
+  const addOnQuote = await request("/quotes", {
+    method: "POST",
+    token: renter,
+    body: JSON.stringify({
+        carId: 1,
+        startDate: "2027-08-03",
+        startTime: "08:00",
+        endDate: "2027-08-03",
+        endTime: "20:00",
+        driverOption: "driver",
+        pickupOption: "delivery",
+    }),
+  });
+  assert.equal(addOnQuote.status, 201, JSON.stringify(addOnQuote.body));
+  assert.equal(addOnQuote.body.driverFee, 350000);
+  assert.equal(addOnQuote.body.deliveryFee, 150000);
+  assert.equal(addOnQuote.body.insuranceFee, 80000);
+  assert.equal(addOnQuote.body.platformFee, 100000);
+  assert.equal(addOnQuote.body.deposit, 5000000);
+  assert.equal(addOnQuote.body.totalPrice, 1330000);
 
   const weekendEarlyQuote = await request("/quotes", {
     method: "POST",
@@ -463,7 +577,7 @@ try {
     headers: { "Idempotency-Key": "promo-last-slot-1" },
     body: JSON.stringify({
       quoteId: limitedQuotes[0].quoteId,
-      consent: { policyVersion: limitedQuotes[0].policyVersion },
+      consent: consentFor(limitedQuotes[0]),
     }),
   });
   assert.equal(firstLimitedBooking.status, 201);
@@ -473,7 +587,7 @@ try {
     headers: { "Idempotency-Key": "promo-last-slot-2" },
     body: JSON.stringify({
       quoteId: limitedQuotes[1].quoteId,
-      consent: { policyVersion: limitedQuotes[1].policyVersion },
+      consent: consentFor(limitedQuotes[1]),
     }),
   });
   assert.equal(exhaustedPromotionBooking.status, 409);
@@ -523,7 +637,7 @@ try {
       quoteId: quote.body.quoteId,
       totalPrice: 1,
       ownerId: 999,
-      consent: { policyVersion: quote.body.policyVersion },
+      consent: consentFor(quote.body),
     }),
   });
   assert.equal(booking.status, 201, JSON.stringify(booking.body));
@@ -536,7 +650,7 @@ try {
     headers: { "Idempotency-Key": "smoke-booking" },
     body: JSON.stringify({
       quoteId: quote.body.quoteId,
-      consent: { policyVersion: quote.body.policyVersion },
+      consent: consentFor(quote.body),
     }),
   });
   assert.equal(repeat.status, 200);
@@ -548,7 +662,7 @@ try {
     headers: { "Idempotency-Key": "smoke-booking" },
     body: JSON.stringify({
       quoteId: secondQuote.body.quoteId,
-      consent: { policyVersion: secondQuote.body.policyVersion },
+      consent: consentFor(secondQuote.body),
     }),
   });
   assert.equal(mismatchedKey.status, 409);
@@ -611,6 +725,98 @@ try {
   assert.equal(ownerSign.status, 200);
   assert.equal(ownerSign.body.status, "Signed");
   assert.equal(ownerSign.body.booking.status, "Contract Signed");
+
+  const readyForCheckin = await request(
+    `/bookings/${booking.body.id}/status`,
+    {
+      method: "PUT",
+      token: owner,
+      body: JSON.stringify({ status: "Ready for Check-in" }),
+    },
+  );
+  assert.equal(readyForCheckin.status, 200);
+  const journeyEvidenceUpload = new FormData();
+  journeyEvidenceUpload.append(
+    "files",
+    new Blob([Buffer.from("89504e470d0a1a0a", "hex")], { type: "image/png" }),
+    "checkin.png",
+  );
+  journeyEvidenceUpload.append("bookingId", String(booking.body.id));
+  const journeyEvidence = await request("/uploads/evidence", {
+    method: "POST",
+    token: renter,
+    body: journeyEvidenceUpload,
+  });
+  assert.equal(journeyEvidence.status, 201);
+  const checkin = await request("/evidence", {
+    method: "POST",
+    token: renter,
+    body: JSON.stringify({
+      bookingId: booking.body.id,
+      phase: "checkin",
+      photos: [journeyEvidence.body.files[0].id],
+      fuel: 80,
+      odometer: 24500,
+      notes: "QA check-in evidence",
+    }),
+  });
+  assert.equal(checkin.status, 201);
+  assert.equal(checkin.body.fuelBefore, 80);
+  assert.equal(checkin.body.odometerBefore, 24500);
+  const checkout = await request("/evidence", {
+    method: "POST",
+    token: renter,
+    body: JSON.stringify({
+      bookingId: booking.body.id,
+      phase: "checkout",
+      photos: [journeyEvidence.body.files[0].id],
+      fuel: 60,
+      odometer: 25000,
+      notes: "QA check-out evidence",
+    }),
+  });
+  assert.equal(checkout.status, 200);
+  assert.equal(checkout.body.fuelAfter, 60);
+  assert.equal(checkout.body.odometerAfter, 25000);
+  assert.equal(checkout.body.status, "Complete");
+  const completedJourney = await request(
+    `/bookings/${booking.body.id}/status`,
+    {
+      method: "PUT",
+      token: owner,
+      body: JSON.stringify({ status: "Completed" }),
+    },
+  );
+  assert.equal(completedJourney.status, 200);
+  const journeyReview = await request("/reviews", {
+    method: "POST",
+    token: renter,
+    body: JSON.stringify({
+      bookingId: booking.body.id,
+      rating: 5,
+      comment: "QA completed full rental journey",
+    }),
+  });
+  assert.equal(journeyReview.status, 201);
+  const journeyTimeline = await request(
+    `/bookings/${booking.body.id}/timeline`,
+    { token: renter },
+  );
+  assert.ok(
+    journeyTimeline.body.some(
+      (event) => event.detail?.includes("Ready for Check-in"),
+    ),
+  );
+  assert.ok(
+    journeyTimeline.body.some((event) =>
+      event.detail?.includes("evidence checkin"),
+    ),
+  );
+  assert.ok(
+    journeyTimeline.body.some((event) =>
+      event.detail?.includes("evidence checkout"),
+    ),
+  );
 
   const evidenceUpload = new FormData();
   evidenceUpload.append(
@@ -812,7 +1018,7 @@ try {
   assert.equal(resume.status, 409);
 
   console.log(
-    "PaceCar API smoke test passed (lifecycle reconciliation, authorization, registration, profile, uploads, listings, promotions, booking, payment, contract, evidence, disputes, reviews, and risk alerts).",
+    "PaceCar API end-to-end tests passed (search and filters, car details, server-side quotes, role dashboards, bookings, payment, contracts, check-in/out evidence, reviews, disputes, listings, promotions, trust, and risk alerts).",
   );
 } finally {
   if (server.exitCode === null) {

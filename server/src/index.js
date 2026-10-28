@@ -8,6 +8,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import { read, write } from "./data/store.js";
+import { TERMS_STATUS, TERMS_VERSION } from "./policy.js";
+import { hasPendingPriceRevision, registerDealRoutes } from "./dealRoutes.js";
 const app = express();
 app.set("trust proxy", process.env.TRUST_PROXY || "loopback");
 app.use(
@@ -440,6 +442,8 @@ const listingFieldNames = [
   "rules",
   "deliveryOptions",
   "instantBooking",
+  "cancellationPolicy",
+  "depositRefundTerms",
 ];
 const listingPayload = (body) => {
   const payload = Object.fromEntries(
@@ -447,6 +451,12 @@ const listingPayload = (body) => {
       .filter((key) => body[key] !== undefined)
       .map((key) => [key, body[key]]),
   );
+  for (const field of ["cancellationPolicy", "depositRefundTerms"])
+    if (payload[field] !== undefined)
+      payload[field] =
+        typeof payload[field] === "string"
+          ? payload[field].trim().slice(0, 500)
+          : "";
   if (
     payload.rules &&
     typeof payload.rules === "object" &&
@@ -678,6 +688,15 @@ const buildQuote = (data, car, input) => {
     ),
   };
 };
+// Conditions come only from the listing; missing values stay null so the UI
+// says "chưa công bố" instead of inventing terms.
+const quoteConditions = (car) => ({
+  mileageLimitKm: car.rules?.mileageLimit ?? null,
+  lateFeePerHour: car.rules?.lateFeePerHour ?? null,
+  fuelPolicy: "Giao đầy – trả đầy; nhiên liệu không nằm trong giá thuê",
+  cancellationPolicy: car.cancellationPolicy || null,
+  depositRefundTerms: car.depositRefundTerms || null,
+});
 const bookingTransitions = {
   Pending: ["Accepted", "Rejected"],
   Accepted: ["Deposit Required", "Rejected"],
@@ -974,7 +993,7 @@ app.post("/api/auth/register", registerLimiter, (q, s) => {
     riskLevel: "Medium",
     passwordHash: hashPassword(password),
     consents: {
-      termsVersion: "pacecar-demo-2026-10-07",
+      termsVersion: TERMS_VERSION,
       acceptedAt: now.toISOString(),
     },
   };
@@ -1434,6 +1453,8 @@ app.post("/api/quotes", quoteLimiter, (req, res) => {
       quoteId: quote.id,
       expiresAt: quote.expiresAt,
       car: publicCar(car),
+      termsVersion: TERMS_VERSION,
+      conditions: quoteConditions(car),
       ...breakdown,
     });
   } catch (error) {
@@ -1462,6 +1483,8 @@ app.get("/api/quotes/:id", (req, res) => {
     pickupLocation: quote.pickupLocation,
     returnLocation: quote.returnLocation,
     destination: quote.destination || null,
+    termsVersion: TERMS_VERSION,
+    conditions: quoteConditions(car),
     ...quote.breakdown,
   });
 });
@@ -1933,12 +1956,19 @@ app.post("/api/bookings", bookingLimiter, requireRole(["renter"]), (q, s) => {
     return s
       .status(403)
       .json({ message: "Báo giá không thuộc tài khoản của bạn" });
-  if (
-    !q.body.consent ||
-    q.body.consent.policyVersion !== quote.breakdown.policyVersion
-  )
+  const consent = q.body.consent || {};
+  if (consent.policyVersion !== quote.breakdown.policyVersion)
     return s.status(422).json({
       message: "Bạn cần đồng ý đúng phiên bản chính sách của báo giá",
+    });
+  if (consent.termsAccepted !== true || consent.roleAcknowledged !== true)
+    return s.status(422).json({
+      message:
+        "Bạn cần tự chọn cả hai xác nhận về Điều khoản sử dụng và vai trò của PaceCar",
+    });
+  if (consent.termsVersion !== TERMS_VERSION)
+    return s.status(422).json({
+      message: "Điều khoản đã được cập nhật, vui lòng tải lại trang và xác nhận lại",
     });
   const car = find(d.cars, quote.carId),
     renter = q.authUser;
@@ -2013,6 +2043,10 @@ app.post("/api/bookings", bookingLimiter, requireRole(["renter"]), (q, s) => {
     paymentStatus: "Unpaid",
     consent: {
       policyVersion: quote.breakdown.policyVersion,
+      termsVersion: TERMS_VERSION,
+      termsStatus: TERMS_STATUS,
+      termsAccepted: true,
+      roleAcknowledged: true,
       acceptedAt: new Date().toISOString(),
     },
     idempotencyKey: idempotencyKey || null,
@@ -2021,6 +2055,17 @@ app.post("/api/bookings", bookingLimiter, requireRole(["renter"]), (q, s) => {
   quote.consumedAt = new Date().toISOString();
   quote.userId = renter.id;
   d.bookings.push(x);
+  d.termsConsents.push({
+    id: nextId(d.termsConsents),
+    userId: renter.id,
+    bookingId: x.id,
+    quoteId: quote.id,
+    carId: car.id,
+    termsVersion: TERMS_VERSION,
+    termsStatus: TERMS_STATUS,
+    acceptedItems: ["terms", "platform_role"],
+    acceptedAt: x.consent.acceptedAt,
+  });
   d.notifications.push({
     id: nextId(d.notifications),
     userId: x.ownerId,
@@ -2064,6 +2109,10 @@ app.post("/api/bookings/:id/payment", requireRole(["renter"]), (q, s) => {
       paymentStatus: booking.paymentStatus,
       paidAt: booking.paidAt,
       amount: booking.deposit,
+    });
+  if (hasPendingPriceRevision(booking))
+    return s.status(409).json({
+      message: "Vui lòng xác nhận báo giá mới của chủ xe trước khi đặt cọc",
     });
   booking.paymentStatus = "Paid";
   booking.paymentMethod = "Demo payment";
@@ -2144,6 +2193,10 @@ app.put(
           "Booking tranh chấp chỉ được cập nhật qua trung tâm tranh chấp",
       });
     if (q.body.status === "Contract Signed") {
+      if (hasPendingPriceRevision(b))
+        return s.status(409).json({
+          message: "Báo giá mới chưa được người thuê xác nhận",
+        });
       const contract = d.contracts.find((item) => item.bookingId === b.id);
       if (!contract?.renterSigned || !contract?.ownerSigned)
         return s.status(409).json({
@@ -2325,7 +2378,11 @@ app.put(
         .json({ message: "Bạn cần xác nhận đồng ý trước khi ký hợp đồng" });
     if (contract[signatureField])
       return s.json(contractView(d, contract, booking));
-    if (!contract[signatureField]) {
+    if (hasPendingPriceRevision(booking))
+      return s
+        .status(409)
+        .json({ message: "Báo giá mới chưa được người thuê xác nhận" });
+    {
       contract[signatureField] = true;
       contract[signedAtField] = new Date().toISOString();
       contract.status = "Partially Signed";
@@ -3133,6 +3190,14 @@ app.get("/api/dashboard/admin", requireRole(["admin"]), (q, s) => {
       openAlerts: d.riskAlerts.filter((a) => a.status !== "Resolved").length,
     },
   });
+});
+registerDealRoutes(app, {
+  read,
+  write,
+  find,
+  requireRole,
+  canAccessBooking,
+  nextId,
 });
 if (fs.existsSync(clientDistDir)) {
   app.use(

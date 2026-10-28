@@ -698,6 +698,34 @@ export function CarListingWizard() {
                 Cho phép thú cưng
               </label>
             </div>
+            <div className="md:col-span-2">
+              <Field
+                label="Chính sách hủy / đổi lịch"
+                hint="Hiển thị cho người thuê trước khi gửi yêu cầu. Để trống nếu chưa có."
+              >
+                <textarea
+                  className="input"
+                  rows="3"
+                  maxLength={500}
+                  value={form.cancellationPolicy || ""}
+                  onChange={(e) => set("cancellationPolicy", e.target.value)}
+                />
+              </Field>
+            </div>
+            <div className="md:col-span-2">
+              <Field
+                label="Điều kiện hoàn / khấu trừ tiền cọc"
+                hint="Thời hạn, phương thức hoàn cọc và các trường hợp khấu trừ."
+              >
+                <textarea
+                  className="input"
+                  rows="3"
+                  maxLength={500}
+                  value={form.depositRefundTerms || ""}
+                  onChange={(e) => set("depositRefundTerms", e.target.value)}
+                />
+              </Field>
+            </div>
             <div className="md:col-span-2 rounded-2xl border p-5">
               <h3 className="font-bold">Giao nhận và đặt nhanh</h3>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">

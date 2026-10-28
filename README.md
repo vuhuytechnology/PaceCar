@@ -141,6 +141,16 @@ Mã ưu đãi seed:
 
 Mã được kiểm tra điều kiện và hạn sử dụng ở backend. `Idempotency-Key` giúp việc người dùng bấm lại hoặc client retry không tạo thêm booking giống nhau cho cùng tài khoản.
 
+### Điều khoản, xác nhận giá và hoa hồng thử nghiệm
+
+Chi tiết tích hợp, bảng yêu cầu, quyết định còn mở và rollback: [docs/TICH_HOP_TAI_LIEU.md](docs/TICH_HOP_TAI_LIEU.md).
+
+- `POST /api/bookings` yêu cầu `consent.termsAccepted` và `consent.roleAcknowledged` đều `true` cùng `termsVersion` hiện hành; backend lưu vào `termsConsents` (người dùng, phiên bản, thời điểm, mã booking/quote).
+- Chủ xe đề xuất đổi giá qua `price-revisions`, người thuê xác nhận; thanh toán/ký hợp đồng bị chặn khi còn đề xuất chờ xác nhận.
+- Biên bản hoàn cọc chỉ là bản ghi thỏa thuận; PaceCar không giữ hay chuyển tiền cọc.
+- Phản ánh: `POST /api/reports`; admin xem tại trung tâm quản trị.
+- Hoa hồng 5%/4%/3% (một mức cho toàn bộ cơ sở) là **phương án đề xuất**, chỉ chạy khi `COMMISSION_TRIAL_ENABLED=true`, chỉ do admin ghi nhận thử, không tạo công nợ, không đổi tổng tiền của người thuê.
+
 ## Luồng đăng xe cho thuê
 
 Đăng nhập bằng tài khoản chủ xe rồi mở **Đăng xe cho thuê** trên navbar hoặc sidebar.

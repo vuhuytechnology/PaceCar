@@ -40,6 +40,13 @@ import {
 import LogoMark from "./components/LogoMark";
 import FeaturedCarCard from "./components/FeaturedCarCard";
 import { api, date, dateTime, money } from "./services/api";
+import {
+  AdminDealsPanel,
+  DepositRefundPanel,
+  PriceConditions,
+  PriceConfirmationPanel,
+  ReportForm,
+} from "./components/DealRecords";
 import DriftScene from "./components/DriftScene";
 import {
   Button,
@@ -1794,6 +1801,16 @@ export function CarDetail() {
               <p className="pt-2 text-center text-[10px] leading-3 text-pace-hint">
                 Báo giá có hiệu lực 15 phút · Policy {quote?.policyVersion}
               </p>
+              <p className="text-center text-[11px] leading-4 text-pace-muted">
+                Giá cuối cùng do bên cho thuê xác nhận trước khi giao kết hợp
+                đồng.{" "}
+                <Link to="/terms" className="font-semibold text-pace-blue underline">
+                  Điều khoản
+                </Link>
+              </p>
+              <div className="flex justify-center">
+                <ReportForm carId={car.id} />
+              </div>
             </div>
           </aside>
         </div>
@@ -2505,11 +2522,19 @@ export function LegalInformation() {
         ],
         [
           "Vai trò của PaceCar",
-          "PaceCar là nền tảng công nghệ kết nối người thuê với chủ xe, cung cấp công cụ báo giá, hợp đồng số, bằng chứng giao nhận và hỗ trợ tranh chấp. Hợp đồng thuê được ký trực tiếp giữa người thuê và chủ xe; PaceCar không phải chủ sở hữu hoặc bên cho thuê phương tiện.",
+          "PaceCar là nền tảng công nghệ kết nối người thuê với chủ xe, cung cấp công cụ báo giá, hợp đồng số, bằng chứng giao nhận và hỗ trợ tranh chấp. Hợp đồng thuê được ký trực tiếp giữa người thuê và chủ xe; PaceCar không phải chủ sở hữu hoặc bên cho thuê phương tiện, không phải bên nhận cọc hay bảo đảm thực hiện hợp đồng.",
         ],
         [
-          "Giá và phí dịch vụ",
-          "Chủ xe niêm yết giá thuê và tiền cọc. Người thuê trả phí nền tảng 10% trên tiền thuê sau điều chỉnh, cùng các khoản bảo hiểm, giao xe, tài xế hoặc ngoài giờ nếu phát sinh. Mọi khoản phí phải xuất hiện trong báo giá trước khi người thuê gửi yêu cầu.",
+          "Gửi yêu cầu không phải đặt xe đã xác nhận",
+          "Khi bạn gửi yêu cầu, PaceCar chỉ chuyển yêu cầu kết nối đến chủ xe. Giá cuối cùng, hợp đồng thuê và thanh toán trực tiếp chỉ có hiệu lực khi người thuê và chủ xe cùng xác nhận. Mọi thay đổi giá sau đó phải được người thuê xác nhận lại; lịch sử thay đổi được lưu lại.",
+        ],
+        [
+          "Giá, tiền cọc và thanh toán",
+          "Chủ xe niêm yết giá thuê và tiền cọc. Báo giá hiển thị riêng giá thuê cơ bản, phụ phí, giảm giá, tổng phí thuê và tiền cọc, kèm điều kiện kilomet, nhiên liệu, hủy và hoàn cọc do chủ xe công bố (nếu có) và thời hạn hiệu lực của báo giá. Điều kiện chủ xe chưa công bố sẽ được hiển thị là chưa công bố. Người thuê trả phí nền tảng 10% trên tiền thuê sau điều chỉnh, cùng các khoản bảo hiểm, giao xe, tài xế hoặc ngoài giờ nếu phát sinh; các khoản này hiện hành trong bản đang vận hành và đang chờ đơn vị vận hành xác nhận.",
+        ],
+        [
+          "Phản ánh và giải quyết tranh chấp",
+          "Bạn có thể báo cáo giá thực tế khác giá hiển thị, tin đăng vi phạm hoặc vấn đề liên quan đến nền tảng bằng mục \"Báo cáo thông tin sai lệch\" trên trang xe, hoặc qua hello@pacecar.vn. PaceCar tiếp nhận, hỗ trợ đối chiếu bằng chứng và có thể tạm gỡ tin đăng vi phạm; các bên tự chịu trách nhiệm về thỏa thuận giữa họ.",
         ],
         [
           "Hủy xe, bàn giao và nhiên liệu",
@@ -2524,8 +2549,8 @@ export function LegalInformation() {
           "PaceCar hiện là bản demo. Báo giá, đặt xe, hợp đồng điện tử và thanh toán mô phỏng không thay thế xác nhận giao dịch hoặc tư vấn pháp lý; không dùng bản demo để gửi tiền hay thực hiện giao dịch thuê xe thật.",
         ],
         [
-          "Cập nhật",
-          "Điều khoản này là thông tin sử dụng cho bản demo và cần được đơn vị vận hành rà soát, cập nhật trước khi cung cấp dịch vụ production. Liên hệ hello@pacecar.vn khi cần hỗ trợ.",
+          "Cập nhật và thông tin chưa công bố",
+          `Phiên bản nháp ${"PC-TERMS-2026.2-DRAFT"}. Tên pháp nhân vận hành, ngày hiệu lực, chính sách bảo vệ dữ liệu cá nhân và điều kiện hủy/hoàn tiền chuẩn của nền tảng: chưa công bố, sẽ được bổ sung sau khi đơn vị vận hành xác nhận. Liên hệ hello@pacecar.vn khi cần hỗ trợ.`,
         ],
       ];
   return (
@@ -3033,6 +3058,7 @@ function LegacyAdminDashboard() {
         desc="Tổng quan vận hành, rủi ro và giao dịch trên nền tảng."
       />
       <BackendSync at={data.generatedAt} onRefresh={reload} />
+      <AdminDealsPanel />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <DashboardCard
           icon={Users}
@@ -3250,6 +3276,8 @@ export function Contract() {
           )}
         </div>
       )}
+      <PriceConfirmationPanel booking={b} user={user} reload={reload} />
+      <DepositRefundPanel booking={b} user={user} reload={reload} />
       <article className="card bg-white p-8 sm:p-12">
         <div className="border-b pb-7 text-center">
           <p className="text-2xl font-extrabold text-brand-700">PACECAR</p>
@@ -4236,7 +4264,8 @@ function BookingQuoteFlow({ carId, quoteId }) {
     } = useFetch(`/cars/${carId}`);
   const [notes, setNotes] = useState(""),
     [submitting, setSubmitting] = useState(false),
-    [accepted, setAccepted] = useState(false);
+    [accepted, setAccepted] = useState(false),
+    [roleAck, setRoleAck] = useState(false);
   const [idempotencyKey] = useState(() => {
     const storageKey = `pacecar-booking-key:${quoteId}`,
       existing = sessionStorage.getItem(storageKey);
@@ -4267,8 +4296,8 @@ function BookingQuoteFlow({ carId, quoteId }) {
       toast("Vui lòng dùng tài khoản người thuê");
       return;
     }
-    if (!accepted) {
-      toast("Bạn cần đồng ý điều khoản");
+    if (!accepted || !roleAck) {
+      toast("Bạn cần tự chọn cả hai xác nhận về điều khoản và vai trò của PaceCar");
       return;
     }
     setSubmitting(true);
@@ -4279,13 +4308,18 @@ function BookingQuoteFlow({ carId, quoteId }) {
         body: JSON.stringify({
           quoteId,
           notes,
-          consent: { policyVersion: quote.policyVersion },
+          consent: {
+            policyVersion: quote.policyVersion,
+            termsVersion: quote.termsVersion,
+            termsAccepted: accepted,
+            roleAcknowledged: roleAck,
+          },
         }),
       });
       toast(
         booking.status === "Accepted"
-          ? "Đặt xe nhanh đã được chấp nhận"
-          : "Đã gửi yêu cầu đến chủ xe",
+          ? "Đặt xe nhanh đã được chủ xe chấp nhận trước; vẫn cần xác nhận giá, hợp đồng và đặt cọc"
+          : "Đã gửi yêu cầu kết nối đến chủ xe. Đây chưa phải đặt xe đã được xác nhận.",
       );
       sessionStorage.removeItem(`pacecar-booking-key:${quoteId}`);
       nav(`/contract/${booking.id}`);
@@ -4363,11 +4397,28 @@ function BookingQuoteFlow({ carId, quoteId }) {
                 className="mt-1"
               />
               <span>
-                Tôi đồng ý với hợp đồng số, chính sách hủy, quy định sử dụng xe
-                và quy trình evidence của PaceCar.
+                Tôi đã đọc và đồng ý với{" "}
+                <Link to="/terms" target="_blank" className="font-semibold text-brand-700 underline">
+                  Điều khoản sử dụng
+                </Link>{" "}
+                (phiên bản {quote.termsVersion}).
+              </span>
+            </label>
+            <label className="mt-3 flex items-start gap-3 rounded-xl bg-slate-50 p-4 text-sm">
+              <input
+                type="checkbox"
+                checked={roleAck}
+                onChange={(e) => setRoleAck(e.target.checked)}
+                className="mt-1"
+              />
+              <span>
+                Tôi hiểu PaceCar là nền tảng kết nối; giá cuối cùng, hợp đồng và
+                thanh toán trực tiếp được xác nhận giữa tôi và chủ xe. Gửi yêu
+                cầu chưa đồng nghĩa đặt xe đã được xác nhận.
               </span>
             </label>
           </section>
+          <PriceConditions quote={quote} />
         </div>
         <aside>
           <div className="card sticky top-24 p-6">
@@ -4421,11 +4472,11 @@ function BookingQuoteFlow({ carId, quoteId }) {
               </div>
             </div>
             <Button
-              disabled={submitting || !accepted}
+              disabled={submitting || !accepted || !roleAck}
               onClick={submit}
               className="mt-6 w-full"
             >
-              {submitting ? "Đang tạo booking..." : "Gửi yêu cầu thuê xe"}
+              {submitting ? "Đang gửi yêu cầu..." : "Gửi yêu cầu kết nối"}
             </Button>
             <p className="mt-3 text-center text-[11px] text-slate-400">
               Quote {quote.quoteId.slice(0, 8)} · {quote.policyVersion}

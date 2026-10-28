@@ -151,6 +151,9 @@ export function read() {
   data.uploadedAssets ||= [];
   data.favorites ||= [];
   data.quotes ||= [];
+  data.termsConsents ||= [];
+  data.reports ||= [];
+  data.commissions ||= [];
   data.promotions ||= [
     {
       id: 1,
