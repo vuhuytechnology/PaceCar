@@ -2544,14 +2544,6 @@ export function LegalInformation() {
           "Giao dịch ngoài nền tảng",
           "PaceCar chỉ có thể hỗ trợ các giao dịch được tạo và lưu bằng công cụ của nền tảng. Hai bên tự liên hệ, thanh toán hoặc ký thỏa thuận bên ngoài sẽ không được áp dụng báo giá, hợp đồng số, bằng chứng giao nhận và quy trình hỗ trợ của PaceCar.",
         ],
-        [
-          "Bản demo",
-          "PaceCar hiện là bản demo. Báo giá, đặt xe, hợp đồng điện tử và thanh toán mô phỏng không thay thế xác nhận giao dịch hoặc tư vấn pháp lý; không dùng bản demo để gửi tiền hay thực hiện giao dịch thuê xe thật.",
-        ],
-        [
-          "Cập nhật và thông tin chưa công bố",
-          `Tên pháp nhân vận hành, ngày hiệu lực, chính sách bảo vệ dữ liệu cá nhân và điều kiện hủy/hoàn tiền chuẩn của nền tảng: chưa công bố, sẽ được bổ sung sau khi đơn vị vận hành xác nhận. Liên hệ hello@pacecar.vn khi cần hỗ trợ.`,
-        ],
       ];
   return (
     <div className="container-app max-w-4xl py-10 sm:py-16">
