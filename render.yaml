@@ -12,7 +12,5 @@ services:
         value: production
       - key: TRUST_PROXY
         value: "1"
-      - key: PACECAR_DEMO_LISTINGS_ENABLED
-        value: "true"
       - key: DATABASE_URL
         sync: false

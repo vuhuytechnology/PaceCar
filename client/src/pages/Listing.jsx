@@ -188,11 +188,13 @@ function validateListingStep(form, step) {
     const errors = [];
     if (form.photos.length < 3) errors.push("Cần tải lên ít nhất 3 ảnh xe");
     if (form.photos.length > 10) errors.push("Chỉ được tải lên tối đa 10 ảnh");
-    if (
-      !form.demoOnly &&
-      !form.documents.some((document) => document.type === "insurance")
-    )
-      errors.push("Cần tải lên bảo hiểm xe");
+    if (form.documentsRequestedAt)
+      for (const [type, label] of [
+        ["registration", "đăng ký xe"],
+        ["insurance", "bảo hiểm xe"],
+      ])
+        if (!form.documents.some((document) => document.type === type))
+          errors.push(`Cần tải lên ${label} theo yêu cầu của admin`);
     return errors;
   }
   return [];
@@ -231,6 +233,7 @@ export function CarListingWizard() {
               ...car.deliveryOptions,
             },
           });
+          if (car.documentsRequestedAt) setStep(3);
           setLoading(false);
         })
         .catch((e) => {
@@ -242,8 +245,13 @@ export function CarListingWizard() {
     if (!id && form.listingStatus !== "Pending Review")
       localStorage.setItem("pacecar-listing-draft", JSON.stringify(form));
   }, [form, id]);
-  const locked = form.listingStatus === "Pending Review";
+  const documentsOnly =
+    form.listingStatus === "Pending Review" &&
+    Boolean(form.documentsRequestedAt);
+  const locked =
+    form.listingStatus === "Pending Review" && !documentsOnly;
   function goToStep(target) {
+    if (documentsOnly && target !== 3) return;
     for (let current = 0; current < target; current += 1) {
       const validationErrors = validateListingStep(form, current);
       if (validationErrors.length) {
@@ -293,6 +301,20 @@ export function CarListingWizard() {
     setSaving(true);
     setErrors([]);
     try {
+      if (documentsOnly) {
+        const validationErrors = validateListingStep(form, 3);
+        if (validationErrors.length) {
+          setErrors(validationErrors);
+          return;
+        }
+        await api(`/cars/${id}`, {
+          method: "PUT",
+          body: JSON.stringify({ documents: form.documents }),
+        });
+        toast.success("Đã gửi giấy tờ cho admin kiểm duyệt");
+        nav("/owner/cars");
+        return;
+      }
       let car = id
         ? await api(`/cars/${id}`, {
             method: "PUT",
@@ -336,7 +358,7 @@ export function CarListingWizard() {
     if (!files.length) return;
     setUploading(true);
     try {
-      const result = await upload("/uploads/documents", files);
+      const result = await upload(`/uploads/documents?carId=${id}`, files);
       const file = result.files[0];
       set("documents", [
         ...form.documents.filter((d) => d.type !== type),
@@ -387,10 +409,17 @@ export function CarListingWizard() {
           sửa.
         </div>
       )}
+      {documentsOnly && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <FileText className="mr-2 inline" />
+          {form.documentsRequestMessage ||
+            "Admin yêu cầu bổ sung đăng ký xe và bảo hiểm để tiếp tục duyệt tin."}
+        </div>
+      )}
       <div className="mb-8 flex overflow-x-auto pb-2">
         {steps.map((name, i) => (
           <button
-            disabled={locked}
+            disabled={locked || (documentsOnly && i !== 3)}
             onClick={() => goToStep(i)}
             className="flex min-w-[150px] items-center"
             key={name}
@@ -412,7 +441,7 @@ export function CarListingWizard() {
         ))}
       </div>
       <fieldset
-        disabled={locked || saving || uploading}
+        disabled={locked || saving || uploading || (documentsOnly && step !== 3)}
         className="card p-6 sm:p-8"
       >
         {step === 0 && (
@@ -778,29 +807,34 @@ export function CarListingWizard() {
         )}
         {step === 3 && (
           <div>
-            <h2 className="text-xl font-bold">Ảnh xe và giấy tờ</h2>
+            <h2 className="text-xl font-bold">
+              {documentsOnly ? "Bổ sung giấy tờ theo yêu cầu" : "Ảnh xe"}
+            </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Ảnh xe được công khai sau duyệt. Giấy tờ nằm trong kho private,
-              chỉ bạn và admin được xem.
+              {documentsOnly
+                ? "Giấy tờ được lưu riêng tư và chỉ chủ xe cùng admin có quyền xem."
+                : "Ảnh xe được công khai sau khi admin duyệt. Chỉ cần tải ảnh ở bước này; admin sẽ yêu cầu giấy tờ riêng tư nếu cần."}
             </p>
             <div className="mt-6">
               <label className="label">Ảnh xe (3–10 ảnh) *</label>
-              <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-brand-200 bg-brand-50/50 p-6 text-brand-700">
-                <ImagePlus />
-                <b className="mt-2">
-                  {uploading ? "Đang tải lên..." : "Chọn ảnh xe"}
-                </b>
-                <span className="text-xs">
-                  JPG, PNG, WEBP · tối đa 5 MB/ảnh
-                </span>
-                <input
-                  type="file"
-                  multiple
-                  accept="image/jpeg,image/png,image/webp"
-                  className="hidden"
-                  onChange={(e) => addPhotos([...e.target.files])}
-                />
-              </label>
+              {!documentsOnly && (
+                <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-brand-200 bg-brand-50/50 p-6 text-brand-700">
+                  <ImagePlus />
+                  <b className="mt-2">
+                    {uploading ? "Đang tải lên..." : "Chọn ảnh xe"}
+                  </b>
+                  <span className="text-xs">
+                    JPG, PNG, WEBP · tối đa 5 MB/ảnh
+                  </span>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(e) => addPhotos([...e.target.files])}
+                  />
+                </label>
+              )}
               <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {form.photos.map((src, i) => (
                   <div className="group relative" key={src}>
@@ -815,24 +849,27 @@ export function CarListingWizard() {
                         Ảnh bìa
                       </span>
                     )}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        set(
-                          "photos",
-                          form.photos.filter((x) => x !== src),
-                        )
-                      }
-                      className="absolute right-2 top-2 rounded-lg bg-white/90 p-1 text-red-600"
-                      aria-label={`Xóa ảnh xe thứ ${i + 1}`}
-                    >
-                      <Trash2 size={15} />
-                    </button>
+                    {!documentsOnly && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          set(
+                            "photos",
+                            form.photos.filter((x) => x !== src),
+                          )
+                        }
+                        className="absolute right-2 top-2 rounded-lg bg-white/90 p-1 text-red-600"
+                        aria-label={`Xóa ảnh xe thứ ${i + 1}`}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
-            <div className="mt-8 grid gap-4 sm:grid-cols-2">
+            {form.documentsRequestedAt ? (
+              <div className="mt-8 grid gap-4 sm:grid-cols-2">
               {[
                 ["registration", "Đăng ký xe"],
                 ["insurance", "Bảo hiểm xe"],
@@ -850,9 +887,7 @@ export function CarListingWizard() {
                     )}
                     <b className="mt-2 block">
                       {label}
-                      {type === "insurance" && !form.demoOnly
-                        ? " *"
-                        : " (không bắt buộc)"}
+                      {" *"}
                     </b>
                     <span className="text-xs text-slate-500">
                       {doc ? doc.name : "Ảnh hoặc PDF · tối đa 8 MB"}
@@ -866,7 +901,14 @@ export function CarListingWizard() {
                   </label>
                 );
               })}
-            </div>
+              </div>
+            ) : (
+              <p className="mt-6 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+                Sau khi nhận tin, admin sẽ xem ảnh và thông tin xe. Nếu cần, admin
+                sẽ gửi yêu cầu để bạn bổ sung đăng ký xe và bảo hiểm trong mục
+                riêng tư này.
+              </p>
+            )}
           </div>
         )}
         {step === 4 && (
@@ -908,11 +950,6 @@ export function CarListingWizard() {
                   ),
                 ],
                 ["Ảnh xe", form.photos.length >= 3],
-                [
-                  form.demoOnly ? "Tin DEMO · không nhận đặt thuê" : "Bảo hiểm xe",
-                  form.demoOnly ||
-                    form.documents.some((d) => d.type === "insurance"),
-                ],
               ].map(([label, ok]) => (
                 <div
                   className={`rounded-xl p-4 text-sm font-semibold ${ok ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}
@@ -922,6 +959,10 @@ export function CarListingWizard() {
                 </div>
               ))}
             </div>
+            <p className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+              Đăng ký xe và bảo hiểm sẽ được admin yêu cầu riêng sau khi xem tin.
+              Chỉ admin mới duyệt công khai sau khi nhận đủ hồ sơ.
+            </p>
             <div className="mt-6 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
               <ShieldCheck className="mr-2 inline" />
               Bằng cách gửi duyệt, bạn xác nhận thông tin chính xác và có quyền
@@ -948,21 +989,28 @@ export function CarListingWizard() {
       <div className="mt-6 flex flex-wrap justify-between gap-3">
         <Button
           variant="outline"
-          disabled={step === 0 || locked}
+          disabled={step === 0 || locked || documentsOnly}
           onClick={() => setStep(step - 1)}
         >
           <ArrowLeft size={17} /> Quay lại
         </Button>
         <div className="flex flex-wrap gap-3">
-          <Button
-            variant="secondary"
-            disabled={locked || saving}
-            onClick={() => saveDraft()}
-          >
-            <Save size={17} />
-            {saving ? "Đang lưu..." : "Lưu nháp"}
-          </Button>
-          {step < steps.length - 1 ? (
+          {!documentsOnly && (
+            <Button
+              variant="secondary"
+              disabled={locked || saving}
+              onClick={() => saveDraft()}
+            >
+              <Save size={17} />
+              {saving ? "Đang lưu..." : "Lưu nháp"}
+            </Button>
+          )}
+          {documentsOnly ? (
+            <Button disabled={saving || uploading} onClick={submit}>
+              <Send size={17} />
+              {saving ? "Đang gửi..." : "Gửi giấy tờ"}
+            </Button>
+          ) : step < steps.length - 1 ? (
             <Button disabled={locked} onClick={() => goToStep(step + 1)}>
               Tiếp tục <ArrowRight size={17} />
             </Button>
@@ -1107,6 +1155,16 @@ export function OwnerCarsPage() {
                     </Button>
                   </>
                 )}
+                {car.listingStatus === "Pending Review" &&
+                  car.documentsRequestedAt && (
+                    <Button
+                      as={Link}
+                      to={`/owner/cars/${car.id}/edit`}
+                      variant="outline"
+                    >
+                      <FileText size={16} /> Bổ sung giấy tờ
+                    </Button>
+                  )}
                 {car.listingStatus === "Paused" && (
                   <>
                     <Button
@@ -1218,6 +1276,22 @@ export function AdminCarApprovals() {
       setDeciding(false);
     }
   }
+  async function requestDocuments(car) {
+    if (deciding) return;
+    setDeciding(true);
+    try {
+      await api(`/admin/cars/${car.id}/request-documents`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      toast.success("Đã gửi yêu cầu giấy tờ cho chủ xe");
+      await load();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setDeciding(false);
+    }
+  }
   async function accessDocument(car, document, download = false) {
     const key = `${car.id}:${document.assetId}:${download ? "download" : "view"}`;
     setAssetBusy(key);
@@ -1250,7 +1324,7 @@ export function AdminCarApprovals() {
       <PageHead
         eyebrow="Marketplace Moderation"
         title="Duyệt tin đăng xe"
-        desc="Chỉ tin đủ thông tin, ảnh và giấy tờ hợp lệ mới được xuất hiện công khai."
+        desc="Admin xem tin trước, yêu cầu giấy tờ riêng tư nếu cần và duyệt thủ công sau khi nhận đủ hồ sơ."
       />
       <div className="card mb-6 flex gap-2 p-3">
         {["Pending Review", "Published", "Rejected"].map((x) => (
@@ -1303,6 +1377,15 @@ export function AdminCarApprovals() {
                       {money(car.pricePerDay)}/ngày
                     </span>
                   </div>
+                  {car.listingStatus === "Pending Review" && (
+                    <p className="mt-2 text-xs text-amber-700">
+                      {car.documentsSubmittedAt
+                        ? "Chủ xe đã bổ sung hồ sơ — chờ admin kiểm tra."
+                        : car.documentsRequestedAt
+                          ? "Đã yêu cầu giấy tờ — đang chờ chủ xe."
+                          : "Chưa yêu cầu giấy tờ bổ sung."}
+                    </p>
+                  )}
                   {car.documents?.length > 0 && (
                     <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
                       <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
@@ -1355,8 +1438,33 @@ export function AdminCarApprovals() {
                 </div>
                 {car.listingStatus === "Pending Review" && (
                   <div className="flex flex-col gap-2">
+                    {(!car.documents?.some(
+                      (document) => document.type === "registration",
+                    ) ||
+                      !car.documents?.some(
+                        (document) => document.type === "insurance",
+                      )) && (
+                      <Button
+                        variant="outline"
+                        disabled={deciding}
+                        onClick={() => requestDocuments(car)}
+                      >
+                        <FileText size={17} />
+                        {car.documentsRequestedAt
+                          ? "Gửi lại yêu cầu"
+                          : "Yêu cầu giấy tờ"}
+                      </Button>
+                    )}
                     <Button
-                      disabled={deciding}
+                      disabled={
+                        deciding ||
+                        !car.documents?.some(
+                          (document) => document.type === "registration",
+                        ) ||
+                        !car.documents?.some(
+                          (document) => document.type === "insurance",
+                        )
+                      }
                       onClick={() => setReview({ car, reason: "" })}
                     >
                       <CheckCircle2 size={17} /> Duyệt

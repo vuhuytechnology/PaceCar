@@ -28,7 +28,6 @@ const server = spawn(process.execPath, ["src/index.js"], {
     DATABASE_URL: "",
     PACECAR_DB_FILE: dbFile,
     PACECAR_UPLOAD_DIR: path.join(tempDir, "uploads"),
-    PACECAR_DEMO_LISTINGS_ENABLED: "true",
     CLIENT_ORIGIN: "http://localhost:5173",
   },
   stdio: ["ignore", "pipe", "pipe"],
@@ -1014,24 +1013,6 @@ try {
     JSON.stringify(submittedReview.body),
   );
 
-  const documentUpload = new FormData();
-  documentUpload.append(
-    "files",
-    new Blob([Buffer.from("%PDF-1.4 QA insurance")], {
-      type: "application/pdf",
-    }),
-    "insurance.pdf",
-  );
-  const uploadedDocuments = await request("/uploads/documents", {
-    method: "POST",
-    token: owner,
-    body: documentUpload,
-  });
-  assert.equal(
-    uploadedDocuments.status,
-    201,
-    JSON.stringify(uploadedDocuments.body),
-  );
   const uploadedCarPhotos = new FormData();
   for (const name of ["front.png", "side.png", "rear.png"])
     uploadedCarPhotos.append(
@@ -1065,7 +1046,7 @@ try {
     minRentalDays: 1,
     maxRentalDays: 30,
     photos: carPhotos.body.files.map((file) => file.url),
-    documents: [{ type: "insurance", assetId: uploadedDocuments.body.files[0].id }],
+    documents: [],
     rules: { mileageLimit: 300, lateFeePerHour: 120000 },
     deliveryOptions: {
       ownerDelivery: false,
@@ -1073,26 +1054,35 @@ try {
       deliveryFee: 0,
     },
   };
-  const missingInsurance = await request("/cars", {
+  const submittedCar = await request("/cars", {
     method: "POST",
     token: owner,
     body: JSON.stringify({
       ...qaListing,
-      documents: [],
+      demoOnly: true,
       submitForReview: true,
     }),
-  });
-  assert.equal(missingInsurance.status, 422);
-  assert.ok(missingInsurance.body.errors.includes("Thiếu bảo hiểm xe"));
-  const submittedCar = await request("/cars", {
-    method: "POST",
-    token: owner,
-    body: JSON.stringify({ ...qaListing, submitForReview: true }),
   });
   assert.equal(submittedCar.status, 201, JSON.stringify(submittedCar.body));
   assert.equal(submittedCar.body.listingStatus, "Pending Review");
   assert.equal(submittedCar.body.demoOnly, false);
-  const approvedCar = await request(
+  const ownerDocsBeforeRequest = await request(
+    `/cars/${submittedCar.body.id}`,
+    {
+      method: "PUT",
+      token: owner,
+      body: JSON.stringify({ documents: [] }),
+    },
+  );
+  assert.equal(ownerDocsBeforeRequest.status, 409);
+  const adminDemoFlag = await request(`/cars/${submittedCar.body.id}`, {
+    method: "PUT",
+    token: admin,
+    body: JSON.stringify({ demoOnly: true }),
+  });
+  assert.equal(adminDemoFlag.status, 200, JSON.stringify(adminDemoFlag.body));
+  assert.equal(adminDemoFlag.body.demoOnly, true);
+  const missingDocumentsApproval = await request(
     `/cars/${submittedCar.body.id}/listing-status`,
     {
       method: "PUT",
@@ -1100,55 +1090,82 @@ try {
       body: JSON.stringify({ status: "Published" }),
     },
   );
-  assert.equal(approvedCar.status, 200, JSON.stringify(approvedCar.body));
-  const pausedCar = await request(
-    `/cars/${submittedCar.body.id}/listing-status`,
+  assert.equal(missingDocumentsApproval.status, 422);
+  assert.ok(
+    missingDocumentsApproval.body.errors.includes("Thiếu đăng ký xe"),
+  );
+  assert.ok(
+    missingDocumentsApproval.body.errors.includes("Thiếu bảo hiểm xe"),
+  );
+  const prematureDocumentUpload = new FormData();
+  prematureDocumentUpload.append(
+    "files",
+    new Blob(["%PDF-1.4 QA registration"], { type: "application/pdf" }),
+    "registration.pdf",
+  );
+  const rejectedDocumentUpload = await request(
+    `/uploads/documents?carId=${submittedCar.body.id}`,
     {
-      method: "PUT",
+      method: "POST",
       token: owner,
-      body: JSON.stringify({ status: "Paused" }),
+      body: prematureDocumentUpload,
     },
   );
-  assert.equal(pausedCar.status, 200, JSON.stringify(pausedCar.body));
-
-  const demoDraft = await request("/cars", {
+  assert.equal(rejectedDocumentUpload.status, 409);
+  const documentRequest = await request(
+    `/admin/cars/${submittedCar.body.id}/request-documents`,
+    {
+      method: "POST",
+      token: admin,
+      body: JSON.stringify({}),
+    },
+  );
+  assert.equal(
+    documentRequest.status,
+    200,
+    JSON.stringify(documentRequest.body),
+  );
+  assert.ok(documentRequest.body.documentsRequestedAt);
+  const documentUpload = new FormData();
+  for (const [filename, contents] of [
+    ["registration.pdf", "%PDF-1.4 QA registration"],
+    ["insurance.pdf", "%PDF-1.4 QA insurance"],
+  ])
+    documentUpload.append(
+      "files",
+      new Blob([Buffer.from(contents)], { type: "application/pdf" }),
+      filename,
+    );
+  const uploadedDocuments = await request(
+    `/uploads/documents?carId=${submittedCar.body.id}`,
+    {
     method: "POST",
     token: owner,
-    body: JSON.stringify({
-      ...qaListing,
-      name: "QA Demo Car 2026",
-      licensePlate: "30A-QADEMO",
-      documents: [],
-      demoOnly: true,
-      submitForReview: false,
-    }),
-  });
-  assert.equal(demoDraft.status, 201, JSON.stringify(demoDraft.body));
-  assert.equal(demoDraft.body.demoOnly, false);
-  const ownerDemoFlag = await request(`/cars/${demoDraft.body.id}`, {
-    method: "PUT",
-    token: owner,
-    body: JSON.stringify({ demoOnly: true }),
-  });
-  assert.equal(ownerDemoFlag.status, 403);
-  const adminDemoFlag = await request(`/cars/${demoDraft.body.id}`, {
-    method: "PUT",
-    token: admin,
-    body: JSON.stringify({ demoOnly: true }),
-  });
-  assert.equal(adminDemoFlag.status, 200, JSON.stringify(adminDemoFlag.body));
-  assert.equal(adminDemoFlag.body.demoOnly, true);
-  const demoSubmitted = await request(
-    `/cars/${demoDraft.body.id}/listing-status`,
-    {
-      method: "PUT",
-      token: owner,
-      body: JSON.stringify({ status: "Pending Review" }),
+    body: documentUpload,
     },
   );
-  assert.equal(demoSubmitted.status, 200, JSON.stringify(demoSubmitted.body));
+  assert.equal(
+    uploadedDocuments.status,
+    201,
+    JSON.stringify(uploadedDocuments.body),
+  );
+  const submittedDocuments = await request(`/cars/${submittedCar.body.id}`, {
+    method: "PUT",
+    token: owner,
+    body: JSON.stringify({
+      documents: [
+        {
+          type: "registration",
+          assetId: uploadedDocuments.body.files[0].id,
+        },
+        { type: "insurance", assetId: uploadedDocuments.body.files[1].id },
+      ],
+    }),
+  });
+  assert.equal(submittedDocuments.status, 200);
+  assert.ok(submittedDocuments.body.documentsSubmittedAt);
   const demoPublished = await request(
-    `/cars/${demoDraft.body.id}/listing-status`,
+    `/cars/${submittedCar.body.id}/listing-status`,
     {
       method: "PUT",
       token: admin,
@@ -1160,9 +1177,18 @@ try {
   assert.equal(demoPublished.body.verified, false);
   const demoQuote = await request("/quotes", {
     method: "POST",
-    body: JSON.stringify({ carId: demoDraft.body.id }),
+    body: JSON.stringify({ carId: submittedCar.body.id }),
   });
   assert.equal(demoQuote.status, 409);
+  const pausedCar = await request(
+    `/cars/${submittedCar.body.id}/listing-status`,
+    {
+      method: "PUT",
+      token: owner,
+      body: JSON.stringify({ status: "Paused" }),
+    },
+  );
+  assert.equal(pausedCar.status, 200, JSON.stringify(pausedCar.body));
 
   const favorite = await request("/favorites/1", {
     method: "POST",

@@ -391,7 +391,16 @@ const bookingLimiter = rateLimit({
     message: "Bạn gửi yêu cầu đặt xe quá nhanh, vui lòng thử lại sau",
   },
 });
-const listingErrors = (car) => {
+const requiredListingDocuments = ["registration", "insurance"];
+const missingListingDocuments = (car) => {
+  const documentTypes = new Set(
+    (Array.isArray(car.documents) ? car.documents : []).map(
+      (document) => document?.type,
+    ),
+  );
+  return requiredListingDocuments.filter((type) => !documentTypes.has(type));
+};
+const listingErrors = (car, requireDocuments = false) => {
   const errors = [];
   for (const field of [
     "name",
@@ -445,18 +454,13 @@ const listingErrors = (car) => {
   if (!Array.isArray(car.photos)) errors.push("Danh sách ảnh không hợp lệ");
   if (photos.length < 3) errors.push("Cần ít nhất 3 ảnh xe");
   if (photos.length > 10) errors.push("Chỉ được đăng tối đa 10 ảnh");
-  const documents = Array.isArray(car.documents) ? car.documents : [];
   if (!Array.isArray(car.documents))
     errors.push("Danh sách giấy tờ không hợp lệ");
-  const documentTypes = new Set(documents.map((d) => d?.type));
-  if (
-    !(
-      car.demoOnly === true &&
-      process.env.PACECAR_DEMO_LISTINGS_ENABLED === "true"
-    ) &&
-    !documentTypes.has("insurance")
-  )
-    errors.push("Thiếu bảo hiểm xe");
+  if (requireDocuments)
+    for (const type of missingListingDocuments(car))
+      errors.push(
+        type === "registration" ? "Thiếu đăng ký xe" : "Thiếu bảo hiểm xe",
+      );
   const rules = car.rules;
   if (rules != null && (typeof rules !== "object" || Array.isArray(rules)))
     errors.push("Quy định thuê xe không hợp lệ");
@@ -853,6 +857,16 @@ app.post(
   "/api/uploads/documents",
   uploadLimiter,
   requireRole(["owner"]),
+  (req, res, next) => {
+    const car = find(read().cars, req.query.carId);
+    if (!car || car.ownerId !== req.authUser.id)
+      return res.status(404).json({ message: "Không tìm thấy tin đăng" });
+    if (car.listingStatus !== "Pending Review" || !car.documentsRequestedAt)
+      return res.status(409).json({
+        message: "Chỉ có thể gửi giấy tờ sau khi admin yêu cầu",
+      });
+    next();
+  },
   documentUpload.array("files", 3),
   (req, res) => {
     if (!req.files?.length)
@@ -1722,6 +1736,54 @@ app.get("/api/admin/car-listings", requireRole(["admin"]), (req, res) => {
       ),
   );
 });
+app.post(
+  "/api/admin/cars/:id/request-documents",
+  requireRole(["admin"]),
+  (req, res) => {
+    const data = read(),
+      car = find(data.cars, req.params.id);
+    if (!car) return res.status(404).json({ message: "Không tìm thấy xe" });
+    if (car.listingStatus !== "Pending Review")
+      return res.status(409).json({
+        message: "Chỉ có thể yêu cầu giấy tờ cho tin đang chờ duyệt",
+      });
+    const missingDocuments = missingListingDocuments(car);
+    if (!missingDocuments.length)
+      return res.status(409).json({
+        message: "Tin đăng đã có đủ đăng ký xe và bảo hiểm",
+      });
+    const labels = {
+        registration: "đăng ký xe",
+        insurance: "bảo hiểm xe",
+      },
+      requestedAt = new Date().toISOString(),
+      requestedLabels = missingDocuments.map((type) => labels[type]);
+    car.documentsRequestedAt = requestedAt;
+    car.documentsRequestedBy = req.authUser.id;
+    car.documentsRequestMessage = `Vui lòng bổ sung ${requestedLabels.join(" và ")} để PaceCar tiếp tục kiểm duyệt.`;
+    car.updatedAt = requestedAt;
+    data.auditLogs.push({
+      id: nextId(data.auditLogs),
+      entity: "car",
+      entityId: car.id,
+      action: "DOCUMENTS_REQUESTED",
+      actorId: req.authUser.id,
+      detail: requestedLabels.join(", "),
+      createdAt: requestedAt,
+    });
+    data.notifications.push({
+      id: nextId(data.notifications),
+      userId: car.ownerId,
+      title: "PaceCar yêu cầu bổ sung giấy tờ xe",
+      message: `${car.name}: ${car.documentsRequestMessage}`,
+      type: "listing",
+      read: false,
+      createdAt: requestedAt,
+    });
+    write(data);
+    res.json(car);
+  },
+);
 app.get("/api/cars/:id", (q, s) => {
   const d = read(),
     c = find(d.cars, q.params.id);
@@ -1851,10 +1913,10 @@ app.put("/api/cars/:id", requireRole(["owner", "admin"]), (q, s) => {
   if (i < 0) return s.status(404).json({ message: "Không tìm thấy xe" });
   if (q.authUser.role !== "admin" && d.cars[i].ownerId !== q.authUser.id)
     return s.status(403).json({ message: "Bạn không sở hữu xe này" });
-  if (
-    q.authUser.role !== "admin" &&
-    d.cars[i].listingStatus === "Pending Review"
-  )
+  const pendingOwnerReview =
+    q.authUser.role === "owner" &&
+    d.cars[i].listingStatus === "Pending Review";
+  if (pendingOwnerReview && !d.cars[i].documentsRequestedAt)
     return s
       .status(409)
       .json({ message: "Tin đang chờ duyệt và tạm thời bị khóa chỉnh sửa" });
@@ -1886,6 +1948,64 @@ app.put("/api/cars/:id", requireRole(["owner", "admin"]), (q, s) => {
     return s
       .status(403)
       .json({ message: "Giấy tờ tải lên không thuộc tài khoản của bạn" });
+  if (pendingOwnerReview) {
+    if (
+      Object.keys(q.body).some((key) => key !== "documents") ||
+      !Array.isArray(safeBody.documents)
+    )
+      return s.status(400).json({
+        message: "Trong lúc duyệt, chỉ được gửi hồ sơ theo yêu cầu của admin",
+      });
+    const invalidDocuments = safeBody.documents.some(
+      (document) =>
+        !document ||
+        typeof document !== "object" ||
+        !requiredListingDocuments.includes(document.type),
+    );
+    if (
+      invalidDocuments ||
+      new Set(safeBody.documents.map((document) => document.type)).size !==
+        safeBody.documents.length
+    )
+      return s
+        .status(400)
+        .json({ message: "Danh sách giấy tờ cần đúng loại và không trùng" });
+    const missingDocuments = missingListingDocuments({
+      documents: safeBody.documents,
+    });
+    if (missingDocuments.length)
+      return s.status(422).json({
+        message: "Cần gửi đủ đăng ký xe và bảo hiểm",
+        errors: missingDocuments.map((type) =>
+          type === "registration" ? "Thiếu đăng ký xe" : "Thiếu bảo hiểm xe",
+        ),
+      });
+    const car = d.cars[i],
+      submittedAt = new Date().toISOString();
+    car.documents = safeBody.documents;
+    car.documentsSubmittedAt = submittedAt;
+    car.updatedAt = submittedAt;
+    d.auditLogs.push({
+      id: nextId(d.auditLogs),
+      entity: "car",
+      entityId: car.id,
+      action: "DOCUMENTS_SUBMITTED",
+      actorId: q.authUser.id,
+      detail: requiredListingDocuments.join(", "),
+      createdAt: submittedAt,
+    });
+    d.notifications.push({
+      id: nextId(d.notifications),
+      userId: 7,
+      title: "Chủ xe đã bổ sung giấy tờ",
+      message: `${car.name} đã gửi đăng ký xe và bảo hiểm để admin kiểm duyệt.`,
+      type: "listing",
+      read: false,
+      createdAt: submittedAt,
+    });
+    write(d);
+    return s.json(car);
+  }
   if (safeBody.licensePlate) {
     safeBody.licensePlate = String(safeBody.licensePlate)
       .toUpperCase()
@@ -1921,7 +2041,7 @@ app.put("/api/cars/:id", requireRole(["owner", "admin"]), (q, s) => {
     };
   candidate.imageUrl = candidate.photos?.[0] || candidate.imageUrl || "";
   if (requiresReview) {
-    const errors = listingErrors(candidate);
+    const errors = listingErrors(candidate, true);
     if (errors.length)
       return s
         .status(422)
@@ -1973,7 +2093,7 @@ app.put(
           message: `Không thể chuyển từ ${car.listingStatus} sang ${target}`,
         });
       if (target === "Pending Review") {
-        const errors = listingErrors(car);
+        const errors = listingErrors(car, true);
         if (errors.length)
           return s
             .status(422)
@@ -1995,7 +2115,7 @@ app.put(
       if (!["Published", "Rejected", "Paused"].includes(target))
         return s.status(400).json({ message: "Trạng thái không hợp lệ" });
       if (target === "Published") {
-        const errors = listingErrors(car);
+        const errors = listingErrors(car, true);
         if (errors.length)
           return s
             .status(422)
