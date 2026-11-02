@@ -325,6 +325,9 @@ function migrateData(data) {
     "description",
   ];
   for (const catalogCar of seed.cars) {
+    const catalogPhotos = Array.isArray(catalogCar.photos)
+      ? catalogCar.photos
+      : [catalogCar.imageUrl];
     let storedCar = data.cars.find(
       (car) => car.catalogKey === catalogCar.catalogKey,
     );
@@ -351,10 +354,10 @@ function migrateData(data) {
     }
     if (
       !Array.isArray(storedCar.photos) ||
-      storedCar.photos.length !== 1 ||
-      storedCar.photos[0] !== catalogCar.imageUrl
+      storedCar.photos.length !== catalogPhotos.length ||
+      storedCar.photos.some((photo, index) => photo !== catalogPhotos[index])
     ) {
-      storedCar.photos = [catalogCar.imageUrl];
+      storedCar.photos = catalogPhotos;
       changed = true;
     }
   }

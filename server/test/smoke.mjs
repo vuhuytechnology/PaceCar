@@ -82,6 +82,31 @@ try {
   const owner = await login("owner@pacecar.vn");
   const unrelatedOwner = await login("tung@pacecar.vn");
   const admin = await login("admin@pacecar.vn");
+  const seededDemoListings = await request(
+    "/admin/car-listings?status=Pending Review",
+    { token: admin },
+  );
+  assert.equal(seededDemoListings.status, 200);
+  const sixDemoListings = seededDemoListings.body.filter(
+    (car) => car.demoOnly,
+  );
+  assert.equal(sixDemoListings.length, 6);
+  assert.ok(
+    sixDemoListings.every(
+      (car) =>
+        car.listingStatus === "Pending Review" &&
+        car.photos.length >= 3 &&
+        car.documents.length === 0,
+    ),
+    JSON.stringify(
+      sixDemoListings.map(({ name, listingStatus, photos, documents }) => ({
+        name,
+        listingStatus,
+        photoCount: photos?.length,
+        documents,
+      })),
+    ),
+  );
   assert.equal(
     (await request("/payment-account", { token: renter })).status,
     403,
