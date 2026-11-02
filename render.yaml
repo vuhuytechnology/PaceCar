@@ -12,3 +12,5 @@ services:
         value: production
       - key: TRUST_PROXY
         value: "1"
+      - key: DATABASE_URL
+        sync: false

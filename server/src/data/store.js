@@ -2,12 +2,20 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { Pool } from "pg";
 import { seed } from "./seed.js";
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const file = process.env.PACECAR_DB_FILE
   ? path.resolve(process.env.PACECAR_DB_FILE)
   : path.join(dir, "db.json");
 fs.mkdirSync(path.dirname(file), { recursive: true });
+const databaseUrl = process.env.DATABASE_URL;
+const postgresEnabled = Boolean(databaseUrl);
+let pool;
+let cachedData;
+let storeReady = false;
+let persistenceError;
+let writeQueue = Promise.resolve();
 
 const hashPassword = (password) => {
   const salt = crypto.randomBytes(16).toString("hex");
@@ -100,10 +108,7 @@ const reconcileBookingStatuses = (data, now = new Date()) => {
   return changed;
 };
 
-export function read() {
-  if (!fs.existsSync(file))
-    fs.writeFileSync(file, JSON.stringify(seed, null, 2));
-  const data = JSON.parse(fs.readFileSync(file, "utf8"));
+function migrateData(data) {
   let changed = migrateLegacyPasswords(data);
   data.notifications ||= [
     {
@@ -391,15 +396,201 @@ export function read() {
       }
     }
   }
-  if (changed) write(data);
-  return data;
+  return { data, changed };
 }
-export function write(data) {
+
+function readJson() {
+  if (!fs.existsSync(file))
+    fs.writeFileSync(file, JSON.stringify(seed, null, 2));
+  const data = JSON.parse(fs.readFileSync(file, "utf8"));
+  const migrated = migrateData(data);
+  if (migrated.changed) writeJson(migrated.data);
+  return migrated.data;
+}
+
+function writeJson(data) {
   const temp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(temp, JSON.stringify(data, null, 2), "utf8");
   fs.renameSync(temp, file);
+}
+
+function assertValidDocument(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data))
+    throw new TypeError("PaceCar database document must be a JSON object");
+}
+
+function getPool() {
+  if (!pool) {
+    pool = new Pool({
+      connectionString: databaseUrl,
+      max: 5,
+      connectionTimeoutMillis: 10000,
+      idleTimeoutMillis: 30000,
+    });
+    pool.on("error", (error) => {
+      console.error("Unexpected PostgreSQL client error:", error.message);
+    });
+  }
+  return pool;
+}
+
+async function ensureSchema() {
+  await getPool().query(`
+    CREATE TABLE IF NOT EXISTS pacecar_store (
+      id smallint PRIMARY KEY CHECK (id = 1),
+      data jsonb NOT NULL,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+}
+
+async function saveDocument(data) {
+  await getPool().query(
+    `INSERT INTO pacecar_store (id, data, updated_at)
+     VALUES (1, $1::jsonb, now())
+     ON CONFLICT (id) DO UPDATE
+     SET data = EXCLUDED.data, updated_at = now()`,
+    [JSON.stringify(data)],
+  );
+}
+
+export async function initializeStore() {
+  if (!postgresEnabled) {
+    read();
+    return;
+  }
+
+  await ensureSchema();
+
+  const result = await getPool().query(
+    "SELECT data FROM pacecar_store WHERE id = 1",
+  );
+  if (result.rows.length) {
+    cachedData =
+      typeof result.rows[0].data === "string"
+        ? JSON.parse(result.rows[0].data)
+        : result.rows[0].data;
+    assertValidDocument(cachedData);
+    const migrated = migrateData(cachedData);
+    cachedData = migrated.data;
+    if (migrated.changed) await saveDocument(cachedData);
+  } else {
+    const initialData = structuredClone(seed);
+    cachedData = migrateData(initialData).data;
+    const inserted = await getPool().query(
+      `INSERT INTO pacecar_store (id, data, updated_at)
+       VALUES (1, $1::jsonb, now())
+       ON CONFLICT (id) DO NOTHING
+       RETURNING id`,
+      [JSON.stringify(cachedData)],
+    );
+    if (!inserted.rowCount) {
+      const current = await getPool().query(
+        "SELECT data FROM pacecar_store WHERE id = 1",
+      );
+      if (!current.rows.length)
+        throw new Error("PostgreSQL store initialization did not persist data");
+      cachedData =
+        typeof current.rows[0].data === "string"
+          ? JSON.parse(current.rows[0].data)
+          : current.rows[0].data;
+      assertValidDocument(cachedData);
+      cachedData = migrateData(cachedData).data;
+    }
+  }
+  storeReady = true;
+}
+
+export function read() {
+  if (!postgresEnabled) return readJson();
+  if (!storeReady)
+    throw new Error("PostgreSQL store has not finished initializing");
+  if (persistenceError)
+    throw new Error("PostgreSQL persistence is unavailable", {
+      cause: persistenceError,
+    });
+  return cachedData;
+}
+
+export function write(data) {
+  if (!postgresEnabled) {
+    writeJson(data);
+    return data;
+  }
+  if (!storeReady)
+    throw new Error("PostgreSQL store has not finished initializing");
+  if (persistenceError)
+    throw new Error("PostgreSQL persistence is unavailable", {
+      cause: persistenceError,
+    });
+  assertValidDocument(data);
+  cachedData = data;
+  const snapshot = structuredClone(data);
+  writeQueue = writeQueue.then(async () => {
+    if (persistenceError) return;
+    try {
+      await saveDocument(snapshot);
+    } catch (error) {
+      persistenceError = error;
+    }
+  });
   return data;
 }
+
+export async function flushWrites() {
+  await writeQueue;
+  if (persistenceError)
+    throw new Error("PostgreSQL persistence failed", {
+      cause: persistenceError,
+    });
+}
+
+export async function importJsonFileToPostgres(jsonFile) {
+  if (!postgresEnabled)
+    throw new Error("DATABASE_URL is required to import into PostgreSQL");
+  const data = JSON.parse(fs.readFileSync(path.resolve(jsonFile), "utf8"));
+  assertValidDocument(data);
+  await ensureSchema();
+  const result = await getPool().query(
+    `INSERT INTO pacecar_store (id, data, updated_at)
+     VALUES (1, $1::jsonb, now())
+     ON CONFLICT (id) DO NOTHING
+     RETURNING id`,
+    [JSON.stringify(data)],
+  );
+  if (!result.rowCount)
+    throw new Error(
+      "PostgreSQL already contains PaceCar data; import was not applied",
+    );
+  return data;
+}
+
+export async function exportPostgresToJsonFile(jsonFile) {
+  if (!postgresEnabled)
+    throw new Error("DATABASE_URL is required to export from PostgreSQL");
+  await ensureSchema();
+  const result = await getPool().query(
+    "SELECT data FROM pacecar_store WHERE id = 1",
+  );
+  if (!result.rows.length)
+    throw new Error("PostgreSQL does not contain PaceCar data to export");
+  const data =
+    typeof result.rows[0].data === "string"
+      ? JSON.parse(result.rows[0].data)
+      : result.rows[0].data;
+  assertValidDocument(data);
+  const output = path.resolve(jsonFile);
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  const temp = `${output}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  fs.writeFileSync(temp, JSON.stringify(data, null, 2), "utf8");
+  fs.renameSync(temp, output);
+  return data;
+}
+
+export async function closeStore() {
+  if (pool) await pool.end();
+}
+
 export function reset() {
   const data = structuredClone(seed);
   migrateLegacyPasswords(data);

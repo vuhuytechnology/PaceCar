@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
-import { read, write } from "./data/store.js";
+import { flushWrites, initializeStore, read, write } from "./data/store.js";
 import { TERMS_STATUS, TERMS_VERSION } from "./policy.js";
 import { hasPendingPriceRevision, registerDealRoutes } from "./dealRoutes.js";
 import { emailVerificationEnabled, sendMail } from "./mailer.js";
@@ -29,6 +29,36 @@ app.use(
   }),
 );
 app.use(express.json({ limit: "2mb" }));
+app.use((req, res, next) => {
+  const originalEnd = res.end;
+  let ending = false;
+  res.end = function (...args) {
+    if (ending) return res;
+    ending = true;
+    flushWrites()
+      .then(() => originalEnd.apply(res, args))
+      .catch((error) => {
+        console.error(
+          "Failed to persist request changes:",
+          error.cause?.message || error.message,
+        );
+        if (res.headersSent) {
+          res.destroy();
+          return;
+        }
+        res.statusCode = 503;
+        res.removeHeader("Content-Length");
+        res.removeHeader("ETag");
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        originalEnd.call(
+          res,
+          JSON.stringify({ message: "Không thể lưu dữ liệu, vui lòng thử lại" }),
+        );
+      });
+    return res;
+  };
+  next();
+});
 const appDir = path.dirname(fileURLToPath(import.meta.url));
 const clientDistDir = path.resolve(appDir, "../../client/dist");
 const uploadRoot = process.env.PACECAR_UPLOAD_DIR
@@ -40,7 +70,7 @@ const evidenceDir = path.join(uploadRoot, "evidence");
 fs.mkdirSync(uploadDir, { recursive: true });
 fs.mkdirSync(documentDir, { recursive: true });
 fs.mkdirSync(evidenceDir, { recursive: true });
-read();
+await initializeStore();
 app.use(
   "/api/uploads/files",
   express.static(uploadDir, { fallthrough: false, maxAge: "7d" }),

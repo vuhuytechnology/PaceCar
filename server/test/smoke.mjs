@@ -25,6 +25,7 @@ const server = spawn(process.execPath, ["src/index.js"], {
   env: {
     ...process.env,
     PORT: String(port),
+    DATABASE_URL: "",
     PACECAR_DB_FILE: dbFile,
     PACECAR_UPLOAD_DIR: path.join(tempDir, "uploads"),
     CLIENT_ORIGIN: "http://localhost:5173",

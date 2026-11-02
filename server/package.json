@@ -4,6 +4,8 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
+    "db:import-json": "node src/data/import-json.js",
+    "db:export-json": "node src/data/export-json.js",
     "test": "node test/smoke.mjs && node test/deals.mjs"
   },
   "dependencies": {
@@ -12,6 +14,7 @@
     "express-rate-limit": "^8.5.2",
     "helmet": "^8.2.0",
     "multer": "^2.2.0",
-    "nodemailer": "^10.2.1"
+    "nodemailer": "^10.2.1",
+    "pg": "^8.23.1"
   }
 }
