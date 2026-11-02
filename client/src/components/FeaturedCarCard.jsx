@@ -30,8 +30,13 @@ export default function FeaturedCarCard({
           loading="lazy"
           className="h-full w-full object-cover"
         />
-        {(car.verified || badges.length > 0) && (
+        {(car.verified || car.demoOnly || badges.length > 0) && (
           <div className="absolute bottom-[9px] left-2.5 flex gap-1.5">
+            {car.demoOnly && (
+              <span className="rounded-[2px] bg-amber-500 px-2 py-[5px] text-[9px] font-extrabold uppercase leading-[13.5px] text-white">
+                Demo · chỉ trưng bày
+              </span>
+            )}
             {car.verified && (
               <span className="rounded-[2px] bg-[#0aa36e] px-2 py-[5px] text-[9px] font-extrabold uppercase leading-[13.5px] text-white">
                 Đã xác thực

@@ -70,6 +70,7 @@ Backend đọc cấu hình từ environment variables. `.env.example` liệt kê
 | `DATABASE_URL` | Nếu có, dùng PostgreSQL thay cho JSON; phải nhập dữ liệu trước lần khởi chạy đầu |
 | `PACECAR_UPLOAD_DIR` | Mặc định `server/uploads` |
 | `EMAIL_VERIFICATION_ENABLED` | Tắt mặc định; cần cấu hình SMTP để gửi mã xác minh |
+| `PACECAR_DEMO_LISTINGS_ENABLED` | Tắt mặc định; chỉ dành cho demo, cho phép admin-marked listings bỏ qua bảo hiểm; tin demo không nhận báo giá, đặt thuê hoặc thanh toán |
 
 ## Kiểm thử và tài liệu
 
@@ -87,6 +88,8 @@ npm run build
 ## Triển khai
 
 Dự án có cấu hình Render Blueprint tại [`render.yaml`](./render.yaml). Quy trình build chạy `npm run render-build`, khởi động bằng `npm start` và kiểm tra `/api/health`. Biến `DATABASE_URL` được khai báo để nhập URL PostgreSQL từ Render; tạo database và nhập bản sao dữ liệu trước khi khởi chạy dịch vụ với biến này.
+
+`PACECAR_DEMO_LISTINGS_ENABLED` chỉ bật trên Render demo. Tin bỏ qua giấy tờ phải được quản trị viên đánh dấu DEMO; hệ thống chặn báo giá, booking và thanh toán cho các tin này. Không bật cờ này trên dịch vụ cho thuê thật.
 
 Khi không có `DATABASE_URL`, dịch vụ tiếp tục dùng JSON như trước. Với PostgreSQL, dữ liệu ứng dụng hiện được lưu thành một tài liệu JSONB đơn và chỉ hỗ trợ một instance ứng dụng; tệp tải lên vẫn cần persistent disk hoặc object storage. Xem [hướng dẫn PostgreSQL](./docs/POSTGRESQL.md) trước khi chuyển môi trường đang chạy.
 

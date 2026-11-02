@@ -188,7 +188,10 @@ function validateListingStep(form, step) {
     const errors = [];
     if (form.photos.length < 3) errors.push("Cần tải lên ít nhất 3 ảnh xe");
     if (form.photos.length > 10) errors.push("Chỉ được tải lên tối đa 10 ảnh");
-    if (!form.documents.some((document) => document.type === "insurance"))
+    if (
+      !form.demoOnly &&
+      !form.documents.some((document) => document.type === "insurance")
+    )
       errors.push("Cần tải lên bảo hiểm xe");
     return errors;
   }
@@ -847,7 +850,9 @@ export function CarListingWizard() {
                     )}
                     <b className="mt-2 block">
                       {label}
-                      {type === "insurance" ? " *" : " (không bắt buộc)"}
+                      {type === "insurance" && !form.demoOnly
+                        ? " *"
+                        : " (không bắt buộc)"}
                     </b>
                     <span className="text-xs text-slate-500">
                       {doc ? doc.name : "Ảnh hoặc PDF · tối đa 8 MB"}
@@ -904,8 +909,9 @@ export function CarListingWizard() {
                 ],
                 ["Ảnh xe", form.photos.length >= 3],
                 [
-                  "Bảo hiểm xe",
-                  form.documents.some((d) => d.type === "insurance"),
+                  form.demoOnly ? "Tin DEMO · không nhận đặt thuê" : "Bảo hiểm xe",
+                  form.demoOnly ||
+                    form.documents.some((d) => d.type === "insurance"),
                 ],
               ].map(([label, ok]) => (
                 <div

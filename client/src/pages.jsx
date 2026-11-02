@@ -1279,7 +1279,7 @@ export function CarDetail() {
   const quoteRequest = useRef(0);
   const [photo, setPhoto] = useState(0);
   const requestQuote = async (code = appliedPromo, preserveOnError = false) => {
-    if (!car) return;
+    if (!car || car.demoOnly) return;
     const start = new Date(`${startDate}T${startTime}:00`),
       end = new Date(`${endDate}T${endTime}:00`);
     const requestId = ++quoteRequest.current;
@@ -1324,11 +1324,15 @@ export function CarDetail() {
     }
   };
   useEffect(() => {
-    if (car) requestQuote(appliedPromo);
+    if (car?.demoOnly) {
+      setQuote(null);
+      setQuoteError("");
+      setQuoting(false);
+    } else if (car) requestQuote(appliedPromo);
     return () => {
       quoteRequest.current += 1;
     };
-  }, [car?.id, startDate, startTime, endDate, endTime, pickupOption]);
+  }, [car?.id, car?.demoOnly, startDate, startTime, endDate, endTime, pickupOption]);
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!car) return <Load />;
   const photos = (car.photos?.length ? car.photos : [car.imageUrl]).filter(
@@ -1472,6 +1476,11 @@ export function CarDetail() {
                   <h1 className="font-display text-[32px] font-extrabold uppercase leading-[34px] tracking-[-1.15px] text-pace-ink sm:text-[46px] sm:leading-[46px]">
                     {car.name}
                   </h1>
+                  {car.demoOnly && (
+                    <span className="pb-1 text-[11px] font-extrabold uppercase leading-[23px] text-amber-700">
+                      DEMO NỘI BỘ · CHỈ TRƯNG BÀY
+                    </span>
+                  )}
                   {car.verified && (
                     <span className="pb-1 text-[11px] font-extrabold uppercase leading-[23px] text-[#0aa36e]">
                       ✓ Đã xác thực
@@ -1618,6 +1627,19 @@ export function CarDetail() {
               id="booking-panel"
               className="flex flex-col gap-3 rounded-[3px] border-t-[4.8px] border-solid border-[#5f98ff] bg-white p-6 lg:sticky lg:top-[74px]"
             >
+              {car.demoOnly ? (
+                <div
+                  className="rounded-[3px] border border-amber-200 bg-amber-50 p-5 text-center"
+                  role="status"
+                >
+                  <p className="font-bold text-amber-900">Xe demo nội bộ</p>
+                  <p className="mt-2 text-sm leading-6 text-amber-800">
+                    Thông tin và giá chỉ để minh họa. Xe này không nhận báo giá,
+                    đặt thuê hoặc thanh toán.
+                  </p>
+                </div>
+              ) : (
+                <>
               <div className="flex flex-col gap-1">
                 <div className="flex items-center justify-between gap-3">
                   <p>
@@ -1811,11 +1833,14 @@ export function CarDetail() {
               <div className="flex justify-center">
                 <ReportForm carId={car.id} />
               </div>
+                </>
+              )}
             </div>
           </aside>
         </div>
       </section>
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-pace-line bg-white/95 p-3 shadow-2xl backdrop-blur lg:hidden">
+      {!car.demoOnly && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-pace-line bg-white/95 p-3 shadow-2xl backdrop-blur lg:hidden">
         <div className="container-app flex items-center justify-between gap-3 px-0">
           <div>
             <p className="text-xs text-pace-muted">
@@ -1848,7 +1873,8 @@ export function CarDetail() {
             </button>
           )}
         </div>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

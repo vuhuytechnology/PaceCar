@@ -28,6 +28,7 @@ const server = spawn(process.execPath, ["src/index.js"], {
     DATABASE_URL: "",
     PACECAR_DB_FILE: dbFile,
     PACECAR_UPLOAD_DIR: path.join(tempDir, "uploads"),
+    PACECAR_DEMO_LISTINGS_ENABLED: "true",
     CLIENT_ORIGIN: "http://localhost:5173",
   },
   stdio: ["ignore", "pipe", "pipe"],
@@ -1044,41 +1045,53 @@ try {
     body: uploadedCarPhotos,
   });
   assert.equal(carPhotos.status, 201, JSON.stringify(carPhotos.body));
-  const submittedCar = await request("/cars", {
+  const qaListing = {
+    name: "QA Test Car 2026",
+    brand: "QA",
+    model: "Test Car",
+    year: 2026,
+    licensePlate: "30A-QA123",
+    location: "Hà Nội",
+    seats: 5,
+    transmission: "Automatic",
+    fuel: "Petrol",
+    type: "Sedan",
+    pricePerDay: 700000,
+    deposit: 5000000,
+    description:
+      "A complete isolated listing used for QA workflow verification.",
+    selfDriveAvailable: true,
+    withDriverAvailable: false,
+    minRentalDays: 1,
+    maxRentalDays: 30,
+    photos: carPhotos.body.files.map((file) => file.url),
+    documents: [{ type: "insurance", assetId: uploadedDocuments.body.files[0].id }],
+    rules: { mileageLimit: 300, lateFeePerHour: 120000 },
+    deliveryOptions: {
+      ownerDelivery: false,
+      pickupAtCar: true,
+      deliveryFee: 0,
+    },
+  };
+  const missingInsurance = await request("/cars", {
     method: "POST",
     token: owner,
     body: JSON.stringify({
-      name: "QA Test Car 2026",
-      brand: "QA",
-      model: "Test Car",
-      year: 2026,
-      licensePlate: "30A-QA123",
-      location: "Hà Nội",
-      seats: 5,
-      transmission: "Automatic",
-      fuel: "Petrol",
-      type: "Sedan",
-      pricePerDay: 700000,
-      deposit: 5000000,
-      description:
-        "A complete isolated listing used for QA workflow verification.",
-      selfDriveAvailable: true,
-      withDriverAvailable: false,
-      minRentalDays: 1,
-      maxRentalDays: 30,
-      photos: carPhotos.body.files.map((file) => file.url),
-      documents: [{ type: "insurance", assetId: uploadedDocuments.body.files[0].id }],
-      rules: { mileageLimit: 300, lateFeePerHour: 120000 },
-      deliveryOptions: {
-        ownerDelivery: false,
-        pickupAtCar: true,
-        deliveryFee: 0,
-      },
+      ...qaListing,
+      documents: [],
       submitForReview: true,
     }),
   });
+  assert.equal(missingInsurance.status, 422);
+  assert.ok(missingInsurance.body.errors.includes("Thiếu bảo hiểm xe"));
+  const submittedCar = await request("/cars", {
+    method: "POST",
+    token: owner,
+    body: JSON.stringify({ ...qaListing, submitForReview: true }),
+  });
   assert.equal(submittedCar.status, 201, JSON.stringify(submittedCar.body));
   assert.equal(submittedCar.body.listingStatus, "Pending Review");
+  assert.equal(submittedCar.body.demoOnly, false);
   const approvedCar = await request(
     `/cars/${submittedCar.body.id}/listing-status`,
     {
@@ -1097,6 +1110,59 @@ try {
     },
   );
   assert.equal(pausedCar.status, 200, JSON.stringify(pausedCar.body));
+
+  const demoDraft = await request("/cars", {
+    method: "POST",
+    token: owner,
+    body: JSON.stringify({
+      ...qaListing,
+      name: "QA Demo Car 2026",
+      licensePlate: "30A-QADEMO",
+      documents: [],
+      demoOnly: true,
+      submitForReview: false,
+    }),
+  });
+  assert.equal(demoDraft.status, 201, JSON.stringify(demoDraft.body));
+  assert.equal(demoDraft.body.demoOnly, false);
+  const ownerDemoFlag = await request(`/cars/${demoDraft.body.id}`, {
+    method: "PUT",
+    token: owner,
+    body: JSON.stringify({ demoOnly: true }),
+  });
+  assert.equal(ownerDemoFlag.status, 403);
+  const adminDemoFlag = await request(`/cars/${demoDraft.body.id}`, {
+    method: "PUT",
+    token: admin,
+    body: JSON.stringify({ demoOnly: true }),
+  });
+  assert.equal(adminDemoFlag.status, 200, JSON.stringify(adminDemoFlag.body));
+  assert.equal(adminDemoFlag.body.demoOnly, true);
+  const demoSubmitted = await request(
+    `/cars/${demoDraft.body.id}/listing-status`,
+    {
+      method: "PUT",
+      token: owner,
+      body: JSON.stringify({ status: "Pending Review" }),
+    },
+  );
+  assert.equal(demoSubmitted.status, 200, JSON.stringify(demoSubmitted.body));
+  const demoPublished = await request(
+    `/cars/${demoDraft.body.id}/listing-status`,
+    {
+      method: "PUT",
+      token: admin,
+      body: JSON.stringify({ status: "Published" }),
+    },
+  );
+  assert.equal(demoPublished.status, 200, JSON.stringify(demoPublished.body));
+  assert.equal(demoPublished.body.demoOnly, true);
+  assert.equal(demoPublished.body.verified, false);
+  const demoQuote = await request("/quotes", {
+    method: "POST",
+    body: JSON.stringify({ carId: demoDraft.body.id }),
+  });
+  assert.equal(demoQuote.status, 409);
 
   const favorite = await request("/favorites/1", {
     method: "POST",

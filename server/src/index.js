@@ -449,7 +449,14 @@ const listingErrors = (car) => {
   if (!Array.isArray(car.documents))
     errors.push("Danh sách giấy tờ không hợp lệ");
   const documentTypes = new Set(documents.map((d) => d?.type));
-  if (!documentTypes.has("insurance")) errors.push("Thiếu bảo hiểm xe");
+  if (
+    !(
+      car.demoOnly === true &&
+      process.env.PACECAR_DEMO_LISTINGS_ENABLED === "true"
+    ) &&
+    !documentTypes.has("insurance")
+  )
+    errors.push("Thiếu bảo hiểm xe");
   const rules = car.rules;
   if (rules != null && (typeof rules !== "object" || Array.isArray(rules)))
     errors.push("Quy định thuê xe không hợp lệ");
@@ -1533,6 +1540,10 @@ app.post("/api/quotes", quoteLimiter, (req, res) => {
     car = find(data.cars, req.body.carId);
   if (!car || car.listingStatus !== "Published")
     return res.status(404).json({ message: "Xe hiện không khả dụng" });
+  if (car.demoOnly)
+    return res
+      .status(409)
+      .json({ message: "Xe demo chỉ để trưng bày, không nhận đặt thuê" });
   const driverOption = req.body.driverOption || "self",
     pickupOption = req.body.pickupOption || "pickup";
   if (!["self", "driver"].includes(driverOption))
@@ -1766,6 +1777,7 @@ app.post("/api/cars", requireRole(["owner"]), (q, s) => {
     totalTrips: 0,
     gpsEnabled: true,
     listingStatus: "Draft",
+    demoOnly: false,
     photos: [],
     documents: [],
     amenities: [],
@@ -1847,6 +1859,15 @@ app.put("/api/cars/:id", requireRole(["owner", "admin"]), (q, s) => {
       .status(409)
       .json({ message: "Tin đang chờ duyệt và tạm thời bị khóa chỉnh sửa" });
   const safeBody = listingPayload(q.body);
+  if (q.body.demoOnly !== undefined) {
+    if (q.authUser.role !== "admin")
+      return s.status(403).json({
+        message: "Chỉ quản trị viên mới có thể đánh dấu tin demo",
+      });
+    if (typeof q.body.demoOnly !== "boolean")
+      return s.status(400).json({ message: "Trạng thái demo không hợp lệ" });
+    safeBody.demoOnly = q.body.demoOnly;
+  }
   if (
     (safeBody.documents !== undefined && !Array.isArray(safeBody.documents)) ||
     (safeBody.photos !== undefined && !Array.isArray(safeBody.photos))
@@ -1985,7 +2006,7 @@ app.put(
       car.reviewedAt = new Date().toISOString();
       car.reviewedBy = q.authUser.id;
       car.rejectionReason = target === "Rejected" ? q.body.reason : null;
-      car.verified = target === "Published";
+      car.verified = target === "Published" && car.demoOnly !== true;
     }
     car.listingStatus = target;
     car.updatedAt = new Date().toISOString();
@@ -2156,6 +2177,10 @@ app.post("/api/bookings", bookingLimiter, requireRole(["renter"]), (q, s) => {
     renter = q.authUser;
   if (!car || car.listingStatus !== "Published")
     return s.status(409).json({ message: "Xe hiện không nhận booking" });
+  if (car.demoOnly)
+    return s
+      .status(409)
+      .json({ message: "Xe demo chỉ để trưng bày, không nhận đặt thuê" });
   const days = rentalDays(quote.startDate, quote.endDate);
   if (days < (car.minRentalDays || 1) || days > (car.maxRentalDays || 30))
     return s.status(422).json({
@@ -2281,6 +2306,10 @@ app.post("/api/bookings/:id/payment", requireRole(["renter"]), (q, s) => {
     return s
       .status(403)
       .json({ message: "Bạn không có quyền thanh toán booking này" });
+  if (find(d.cars, booking.carId)?.demoOnly)
+    return s
+      .status(409)
+      .json({ message: "Xe demo không nhận thanh toán hoặc đặt cọc" });
   if (!["Accepted", "Deposit Required"].includes(booking.status))
     return s.status(409).json({
       message: "Chỉ thanh toán sau khi yêu cầu thuê xe được chấp nhận",
