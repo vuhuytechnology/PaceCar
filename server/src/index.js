@@ -128,15 +128,46 @@ const publicReviewSummary = (data, carId) => {
 };
 const bookingCarFor = (user, car) =>
   user?.role === "renter" ? publicCar(car) : car;
-const bookingView = (data, booking, viewer) => ({
-  ...booking,
-  reviewed: data.reviews.some((review) => review.bookingId === booking.id),
-  car: bookingCarFor(viewer, find(data.cars, booking.carId)),
-  renter: publicUser(find(data.users, booking.renterId)),
-  owner: publicUser(find(data.users, booking.ownerId)),
-});
+const bookingView = (data, booking, viewer) => {
+  const pendingPayment = data.payments?.find(
+    (payment) =>
+      payment.id === booking.paymentId &&
+      payment.bookingId === booking.id &&
+      payment.status === "Pending",
+  );
+  return {
+    ...booking,
+    reviewed: data.reviews.some((review) => review.bookingId === booking.id),
+    car: bookingCarFor(viewer, find(data.cars, booking.carId)),
+    renter: publicUser(find(data.users, booking.renterId)),
+    owner: publicUser(find(data.users, booking.ownerId)),
+    ...(viewer.role === "owner" &&
+    viewer.id === booking.ownerId &&
+    pendingPayment
+      ? {
+          pendingPayment: {
+            amount: pendingPayment.amount,
+            transferCode: pendingPayment.transferCode,
+          },
+        }
+      : {}),
+  };
+};
 const nextId = (items) =>
   Math.max(0, ...items.map((item) => Number(item.id) || 0)) + 1;
+const sepayQrUrl = ({ bankCode, accountNumber, amount, transferCode }) => {
+  const url = new URL("https://vietqr.app/img");
+  url.search = new URLSearchParams({
+    acc: accountNumber,
+    bank: bankCode,
+    amount: String(amount),
+    des: transferCode,
+    template: "compact",
+    showinfo: "true",
+    fullacc: "true",
+  }).toString();
+  return url.toString();
+};
 const promotionUsageCount = (data, code) =>
   data.bookings.filter(
     (booking) =>
@@ -2266,35 +2297,235 @@ app.post("/api/bookings/:id/payment", requireRole(["renter"]), (q, s) => {
     return s.status(409).json({
       message: "Vui lòng xác nhận báo giá mới của chủ xe trước khi đặt cọc",
     });
-  booking.paymentStatus = "Paid";
-  booking.paymentMethod = "Demo payment";
-  booking.paidAt = new Date().toISOString();
+  if (!Number.isSafeInteger(booking.deposit) || booking.deposit <= 0)
+    return s.status(409).json({
+      message: "Booking không có khoản tiền cọc hợp lệ để thanh toán",
+    });
+  if (booking.paymentStatus === "Pending") {
+    const pending = d.payments.find(
+      (payment) =>
+        payment.id === booking.paymentId &&
+        payment.bookingId === booking.id &&
+        payment.status === "Pending",
+    );
+    if (!pending || pending.amount !== booking.deposit)
+      return s.status(409).json({
+        message: "Thông tin thanh toán đang chờ xử lý không nhất quán",
+      });
+    return s.json({
+      paymentId: pending.id,
+      bookingId: booking.id,
+      paymentStatus: booking.paymentStatus,
+      amount: pending.amount,
+      transferCode: pending.transferCode,
+      qrUrl: pending.qrUrl,
+      recipient: pending.recipient,
+      createdAt: pending.createdAt,
+    });
+  }
+  if (booking.paymentStatus !== "Unpaid")
+    return s.status(409).json({ message: "Trạng thái tiền cọc không hợp lệ" });
+  const account = d.paymentAccounts.find(
+    (item) => item.ownerId === booking.ownerId,
+  );
+  if (!account)
+    return s.status(409).json({
+      message: "Chủ xe chưa cấu hình tài khoản nhận tiền cọc",
+    });
+  const paymentId = nextId(d.payments);
+  const transferCode = `PC${booking.id}P${paymentId}`;
+  const createdAt = new Date().toISOString();
+  const payment = {
+    id: paymentId,
+    bookingId: booking.id,
+    renterId: booking.renterId,
+    ownerId: booking.ownerId,
+    amount: booking.deposit,
+    transferCode,
+    qrUrl: sepayQrUrl({
+      bankCode: account.bankCode,
+      accountNumber: account.accountNumber,
+      amount: booking.deposit,
+      transferCode,
+    }),
+    recipient: {
+      bankCode: account.bankCode,
+      accountNumber: account.accountNumber,
+      accountHolder: account.accountHolder,
+    },
+    status: "Pending",
+    createdAt,
+  };
+  d.payments.push(payment);
+  booking.paymentStatus = "Pending";
+  booking.paymentMethod = "SePay QR; owner confirmation required";
+  booking.paymentId = payment.id;
   d.auditLogs.push({
     id: nextId(d.auditLogs),
     entity: "booking",
     entityId: booking.id,
-    action: "DEPOSIT_PAYMENT_RECORDED",
+    action: "DEPOSIT_PAYMENT_INSTRUCTIONS_CREATED",
     actorId: q.authUser.id,
-    detail: String(booking.deposit),
-    createdAt: booking.paidAt,
+    detail: `${payment.amount}:${payment.transferCode}`,
+    createdAt,
   });
   d.notifications.push({
     id: nextId(d.notifications),
     userId: booking.ownerId,
-    title: "Đã ghi nhận thanh toán tiền cọc",
-    message: `Booking #PC${booking.id} đã thanh toán tiền cọc (mô phỏng).`,
+    title: "Người thuê yêu cầu QR chuyển cọc",
+    message: `Booking #PC${booking.id} có mã chuyển khoản ${payment.transferCode}; chỉ xác nhận sau khi kiểm tra tài khoản nhận.`,
     type: "payment",
     read: false,
-    createdAt: booking.paidAt,
+    createdAt,
   });
   write(d);
-  s.json({
+  s.status(201).json({
+    paymentId: payment.id,
     bookingId: booking.id,
     paymentStatus: booking.paymentStatus,
-    paidAt: booking.paidAt,
-    amount: booking.deposit,
+    amount: payment.amount,
+    transferCode: payment.transferCode,
+    qrUrl: payment.qrUrl,
+    recipient: payment.recipient,
+    createdAt,
   });
 });
+app.post(
+  "/api/bookings/:id/payment/confirm",
+  requireRole(["owner"]),
+  (q, s) => {
+    const d = read(),
+      booking = find(d.bookings, q.params.id);
+    if (!booking)
+      return s.status(404).json({ message: "Không tìm thấy booking" });
+    if (booking.ownerId !== q.authUser.id)
+      return s
+        .status(403)
+        .json({ message: "Bạn không sở hữu booking này" });
+    if (booking.paymentStatus === "Paid")
+      return s.json({
+        bookingId: booking.id,
+        paymentStatus: booking.paymentStatus,
+        paidAt: booking.paidAt,
+        amount: booking.deposit,
+      });
+    if (booking.paymentStatus !== "Pending")
+      return s.status(409).json({
+        message: "Booking không có khoản cọc đang chờ xác nhận",
+      });
+    if (!["Accepted", "Deposit Required"].includes(booking.status))
+      return s.status(409).json({
+        message: "Chỉ xác nhận tiền cọc cho booking đang được chấp nhận",
+      });
+    if (q.body.confirmedReceived !== true)
+      return s.status(400).json({
+        message: "Cần xác nhận đã kiểm tra và nhận đủ tiền trong tài khoản",
+      });
+    const payment = d.payments.find(
+      (item) =>
+        item.id === booking.paymentId &&
+        item.bookingId === booking.id &&
+        item.ownerId === q.authUser.id &&
+        item.status === "Pending",
+    );
+    if (!payment || payment.amount !== booking.deposit)
+      return s.status(409).json({
+        message: "Không tìm thấy khoản thanh toán đang chờ hợp lệ",
+      });
+    const confirmedAt = new Date().toISOString();
+    payment.status = "Confirmed";
+    payment.confirmedBy = q.authUser.id;
+    payment.confirmedAt = confirmedAt;
+    booking.paymentStatus = "Paid";
+    booking.paidAt = confirmedAt;
+    d.auditLogs.push({
+      id: nextId(d.auditLogs),
+      entity: "booking",
+      entityId: booking.id,
+      action: "DEPOSIT_PAYMENT_CONFIRMED_BY_OWNER",
+      actorId: q.authUser.id,
+      detail: `${payment.amount}:${payment.transferCode}`,
+      createdAt: confirmedAt,
+    });
+    d.notifications.push({
+      id: nextId(d.notifications),
+      userId: booking.renterId,
+      title: "Chủ xe đã xác nhận tiền cọc",
+      message: `Chủ xe xác nhận đã nhận tiền cọc cho booking #PC${booking.id}.`,
+      type: "payment",
+      read: false,
+      createdAt: confirmedAt,
+    });
+    write(d);
+    s.json({
+      paymentId: payment.id,
+      bookingId: booking.id,
+      paymentStatus: booking.paymentStatus,
+      amount: payment.amount,
+      paidAt: confirmedAt,
+    });
+  },
+);
+app.post(
+  "/api/bookings/:id/payment/cancel",
+  requireRole(["owner"]),
+  (q, s) => {
+    const d = read(),
+      booking = find(d.bookings, q.params.id);
+    if (!booking)
+      return s.status(404).json({ message: "Không tìm thấy booking" });
+    if (booking.ownerId !== q.authUser.id)
+      return s
+        .status(403)
+        .json({ message: "Bạn không sở hữu booking này" });
+    if (booking.paymentStatus !== "Pending")
+      return s.status(409).json({
+        message: "Booking không có QR chuyển khoản đang chờ để hủy",
+      });
+    if (q.body.confirmedNoTransfer !== true)
+      return s.status(400).json({
+        message: "Chỉ hủy QR sau khi đã kiểm tra tài khoản và chưa nhận tiền",
+      });
+    const payment = d.payments.find(
+      (item) =>
+        item.id === booking.paymentId &&
+        item.bookingId === booking.id &&
+        item.ownerId === q.authUser.id &&
+        item.status === "Pending",
+    );
+    if (!payment)
+      return s.status(409).json({
+        message: "Không tìm thấy khoản thanh toán đang chờ hợp lệ",
+      });
+    const cancelledAt = new Date().toISOString();
+    payment.status = "Cancelled";
+    payment.cancelledBy = q.authUser.id;
+    payment.cancelledAt = cancelledAt;
+    booking.paymentStatus = "Unpaid";
+    booking.paymentMethod = null;
+    booking.paymentId = null;
+    d.auditLogs.push({
+      id: nextId(d.auditLogs),
+      entity: "booking",
+      entityId: booking.id,
+      action: "DEPOSIT_PAYMENT_QR_CANCELLED",
+      actorId: q.authUser.id,
+      detail: payment.transferCode,
+      createdAt: cancelledAt,
+    });
+    d.notifications.push({
+      id: nextId(d.notifications),
+      userId: booking.renterId,
+      title: "Mã QR tiền cọc đã bị hủy",
+      message: `Mã chuyển khoản ${payment.transferCode} của booking #PC${booking.id} đã bị hủy. Không chuyển tiền theo mã này.`,
+      type: "payment",
+      read: false,
+      createdAt: cancelledAt,
+    });
+    write(d);
+    s.json({ bookingId: booking.id, paymentStatus: booking.paymentStatus });
+  },
+);
 app.put(
   "/api/bookings/:id/status",
   requireRole(["renter", "owner", "admin"]),
@@ -2339,12 +2570,20 @@ app.put(
       return s.status(409).json({
         message: "Hãy mở tranh chấp qua trung tâm tranh chấp",
       });
+    if (b.paymentStatus === "Pending" && q.body.status === "Rejected")
+      return s.status(409).json({
+        message: "Chủ xe cần hủy QR sau khi kiểm tra chưa nhận tiền trước khi từ chối",
+      });
     if (b.status === "Dispute")
       return s.status(409).json({
         message:
           "Booking tranh chấp chỉ được cập nhật qua trung tâm tranh chấp",
       });
     if (q.body.status === "Contract Signed") {
+      if (b.paymentStatus !== "Paid")
+        return s.status(409).json({
+          message: "Chủ xe cần xác nhận đã nhận đủ tiền cọc trước khi ký hợp đồng",
+        });
       if (hasPendingPriceRevision(b))
         return s.status(409).json({
           message: "Báo giá mới chưa được người thuê xác nhận",
@@ -2454,10 +2693,10 @@ app.post("/api/contracts", requireRole(["owner", "admin"]), (q, s) => {
     return s.status(409).json({
       message: "Chỉ phát hành hợp đồng cho booking đã được chấp nhận",
     });
-  if (booking.paymentStatus === "Unpaid")
+  if (booking.paymentStatus !== "Paid")
     return s.status(409).json({
       message:
-        "Người thuê cần hoàn tất thanh toán tiền cọc trước khi phát hành hợp đồng",
+        "Chủ xe cần xác nhận đã nhận đủ tiền cọc trước khi phát hành hợp đồng",
     });
   const car = find(d.cars, booking.carId);
   const x = {
@@ -2520,6 +2759,10 @@ app.put(
       return s
         .status(409)
         .json({ message: "Hợp đồng không còn ở trạng thái có thể ký" });
+    if (booking.paymentStatus !== "Paid")
+      return s.status(409).json({
+        message: "Chủ xe cần xác nhận đã nhận đủ tiền cọc trước khi ký hợp đồng",
+      });
     const signatureField =
         q.authUser.role === "renter" ? "renterSigned" : "ownerSigned",
       signedAtField =
@@ -3012,6 +3255,67 @@ app.put(
 app.get("/api/audit-logs", requireRole(["admin"]), (q, s) =>
   s.json(read().auditLogs.slice().reverse()),
 );
+app.get("/api/payment-account", requireRole(["owner"]), (q, s) => {
+  const account = read().paymentAccounts.find(
+    (item) => item.ownerId === q.authUser.id,
+  );
+  s.json(
+    account
+      ? {
+          bankCode: account.bankCode,
+          accountNumber: account.accountNumber,
+          accountHolder: account.accountHolder,
+          updatedAt: account.updatedAt,
+        }
+      : { bankCode: "", accountNumber: "", accountHolder: "" },
+  );
+});
+app.put("/api/payment-account", requireRole(["owner"]), (q, s) => {
+  const bankCode = String(q.body.bankCode || "").trim();
+  const accountNumber = String(q.body.accountNumber || "").trim();
+  const accountHolder = String(q.body.accountHolder || "")
+    .trim()
+    .replace(/\s+/g, " ");
+  if (
+    !/^[A-Za-z0-9._-]{2,30}$/.test(bankCode) ||
+    !/^[A-Za-z0-9]{5,19}$/.test(accountNumber) ||
+    accountHolder.length < 2 ||
+    accountHolder.length > 80 ||
+    /[\u0000-\u001f\u007f]/.test(accountHolder)
+  )
+    return s.status(422).json({
+      message:
+        "Vui lòng nhập mã ngân hàng, số tài khoản và tên chủ tài khoản hợp lệ",
+    });
+  const d = read();
+  let account = d.paymentAccounts.find(
+    (item) => item.ownerId === q.authUser.id,
+  );
+  const updatedAt = new Date().toISOString();
+  if (account) {
+    Object.assign(account, { bankCode, accountNumber, accountHolder, updatedAt });
+  } else {
+    account = {
+      ownerId: q.authUser.id,
+      bankCode,
+      accountNumber,
+      accountHolder,
+      updatedAt,
+    };
+    d.paymentAccounts.push(account);
+  }
+  d.auditLogs.push({
+    id: nextId(d.auditLogs),
+    entity: "payment_account",
+    entityId: q.authUser.id,
+    action: "UPDATED",
+    actorId: q.authUser.id,
+    detail: "Owner payment account updated",
+    createdAt: updatedAt,
+  });
+  write(d);
+  s.json({ bankCode, accountNumber, accountHolder, updatedAt });
+});
 app.get("/api/users/:id", requireRole(["renter", "owner", "admin"]), (q, s) => {
   const requestedUserId = +q.params.id;
   if (q.authUser.role !== "admin" && q.authUser.id !== requestedUserId)

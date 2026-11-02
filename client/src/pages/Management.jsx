@@ -58,6 +58,8 @@ export function MyBookings() {
     [reviewForm, setReviewForm] = useState({ rating: 5, comment: "" }),
     [reviewingBusy, setReviewingBusy] = useState(false),
     [payingId, setPayingId] = useState(null),
+    [paymentDetails, setPaymentDetails] = useState(null),
+    [paymentDecision, setPaymentDecision] = useState(null),
     [reviewedIds, setReviewedIds] = useState(() => new Set());
   const load = () => {
     setError("");
@@ -131,11 +133,45 @@ export function MyBookings() {
   async function payDeposit(booking) {
     setPayingId(booking.id);
     try {
-      await api(`/bookings/${booking.id}/payment`, {
+      const result = await api(`/bookings/${booking.id}/payment`, {
         method: "POST",
-        body: JSON.stringify({ method: "demo" }),
+        body: JSON.stringify({}),
       });
-      toast.success("Đã ghi nhận thanh toán tiền cọc");
+      setPaymentDetails(result);
+      toast.success(
+        result.paymentStatus === "Paid"
+          ? "Chủ xe đã xác nhận khoản tiền cọc"
+          : "Đã tạo QR. Booking chỉ được ghi nhận đã thanh toán sau khi chủ xe xác nhận.",
+      );
+      load();
+    } catch (paymentError) {
+      toast.error(paymentError.message);
+    } finally {
+      setPayingId(null);
+    }
+  }
+  async function resolvePaymentDecision() {
+    if (!paymentDecision) return;
+    setPayingId(paymentDecision.id);
+    try {
+      const isConfirm = paymentDecision.action === "confirm";
+      await api(
+        `/bookings/${paymentDecision.id}/payment/${isConfirm ? "confirm" : "cancel"}`,
+        {
+          method: "POST",
+          body: JSON.stringify(
+            isConfirm
+              ? { confirmedReceived: true }
+              : { confirmedNoTransfer: true },
+          ),
+        },
+      );
+      toast.success(
+        isConfirm
+          ? "Đã xác nhận nhận đủ tiền cọc"
+          : "Đã hủy QR sau khi xác nhận chưa nhận tiền",
+      );
+      setPaymentDecision(null);
       load();
     } catch (paymentError) {
       toast.error(paymentError.message);
@@ -146,7 +182,23 @@ export function MyBookings() {
   if (error) return <ErrorState message={error} onRetry={load} />;
   if (!bookings) return <PageLoading />;
   const actions = (b) =>
-    user.role === "owner" && b.status === "Pending" ? (
+    user.role === "owner" && b.paymentStatus === "Pending" ? (
+      <>
+        <Button
+          disabled={payingId === b.id}
+          onClick={() => setPaymentDecision({ id: b.id, action: "confirm" })}
+        >
+          Xác nhận đã nhận cọc
+        </Button>
+        <Button
+          variant="outline"
+          disabled={payingId === b.id}
+          onClick={() => setPaymentDecision({ id: b.id, action: "cancel" })}
+        >
+          Hủy QR
+        </Button>
+      </>
+    ) : user.role === "owner" && b.status === "Pending" ? (
       <>
         <Button onClick={() => setDecision({ id: b.id, status: "Accepted" })}>
           Chấp nhận
@@ -174,7 +226,11 @@ export function MyBookings() {
       b.paymentStatus !== "Paid" ? (
       <Button disabled={payingId === b.id} onClick={() => payDeposit(b)}>
         <Wallet size={16} />
-        {payingId === b.id ? "Đang xử lý..." : "Thanh toán cọc"}
+        {payingId === b.id
+          ? "Đang xử lý..."
+          : b.paymentStatus === "Pending"
+            ? "Mở QR chuyển cọc"
+            : "Tạo QR chuyển cọc"}
       </Button>
     ) : null;
   return (
@@ -238,7 +294,19 @@ export function MyBookings() {
                 )}
                 {b.paymentStatus === "Paid" && (
                   <p className="mt-1 text-xs font-bold text-emerald-600">
-                    ✓ Đã thanh toán tiền cọc
+                    ✓ Chủ xe đã xác nhận nhận tiền cọc
+                  </p>
+                )}
+                {b.paymentStatus === "Pending" && (
+                  <p className="mt-1 text-xs font-semibold text-amber-700">
+                    QR đã tạo · chưa xác nhận tiền cọc
+                    {user.role === "owner" && b.pendingPayment && (
+                      <>
+                        {" "}
+                        · {money(b.pendingPayment.amount)} ·{" "}
+                        {b.pendingPayment.transferCode}
+                      </>
+                    )}
                   </p>
                 )}
                 <div className="mt-2 flex gap-2">
@@ -288,6 +356,103 @@ export function MyBookings() {
           />
         )}
       </div>
+      <Modal
+        open={!!paymentDetails}
+        title="QR chuyển tiền cọc"
+        onClose={() => setPaymentDetails(null)}
+        actions={
+          <Button variant="outline" onClick={() => setPaymentDetails(null)}>
+            Đóng
+          </Button>
+        }
+      >
+        {paymentDetails?.paymentStatus === "Pending" ? (
+          <div className="space-y-4">
+            <p>
+              Tiền được chuyển thẳng vào tài khoản của chủ xe. PaceCar không
+              nhận hoặc giữ khoản cọc; booking chưa được ghi nhận đã thanh toán
+              cho đến khi chủ xe kiểm tra giao dịch và xác nhận.
+            </p>
+            <img
+              src={paymentDetails.qrUrl}
+              alt={`Mã QR chuyển ${money(paymentDetails.amount)} cho booking ${paymentDetails.bookingId}`}
+              className="mx-auto aspect-square w-56 rounded-xl border bg-white object-contain p-2"
+            />
+            <dl className="grid gap-2 rounded-xl bg-slate-50 p-4 text-sm">
+              <div className="flex justify-between gap-4">
+                <dt>Ngân hàng</dt>
+                <dd className="text-right font-semibold">
+                  {paymentDetails.recipient.bankCode}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt>Số tài khoản</dt>
+                <dd className="text-right font-semibold">
+                  {paymentDetails.recipient.accountNumber}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt>Chủ tài khoản</dt>
+                <dd className="text-right font-semibold">
+                  {paymentDetails.recipient.accountHolder}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt>Số tiền chính xác</dt>
+                <dd className="text-right font-bold text-slate-950">
+                  {money(paymentDetails.amount)}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt>Nội dung chuyển khoản</dt>
+                <dd className="text-right font-bold text-brand-700">
+                  {paymentDetails.transferCode}
+                </dd>
+              </div>
+            </dl>
+            <p className="text-xs text-slate-500">
+              Vui lòng nhập đúng số tiền và nội dung. Sau khi chuyển, chờ chủ
+              xe kiểm tra sao kê ngân hàng.
+            </p>
+          </div>
+        ) : (
+          <p>Khoản tiền cọc của booking này đã được chủ xe xác nhận.</p>
+        )}
+      </Modal>
+      <Modal
+        open={!!paymentDecision}
+        title={
+          paymentDecision?.action === "confirm"
+            ? "Xác nhận đã nhận tiền cọc"
+            : "Hủy QR chuyển khoản"
+        }
+        onClose={() => !payingId && setPaymentDecision(null)}
+        actions={
+          <>
+            <Button
+              variant="outline"
+              disabled={payingId === paymentDecision?.id}
+              onClick={() => setPaymentDecision(null)}
+            >
+              Quay lại
+            </Button>
+            <Button
+              disabled={payingId === paymentDecision?.id}
+              onClick={resolvePaymentDecision}
+            >
+              {payingId === paymentDecision?.id
+                ? "Đang xử lý..."
+                : paymentDecision?.action === "confirm"
+                  ? "Đã kiểm tra, xác nhận"
+                  : "Đã kiểm tra, hủy QR"}
+            </Button>
+          </>
+        }
+      >
+        {paymentDecision?.action === "confirm"
+          ? "Chỉ xác nhận sau khi đã kiểm tra tài khoản ngân hàng, nội dung chuyển khoản và số tiền thực nhận khớp với booking."
+          : "Chỉ hủy sau khi đã kiểm tra và chắc chắn chưa nhận tiền. QR đã hủy không được dùng để chuyển khoản."}
+      </Modal>
       <Modal
         open={!!decision}
         title="Xác nhận cập nhật"
@@ -372,6 +537,13 @@ export function Profile() {
     toast = useToast();
   const [data, setData] = useState(null),
     [form, setForm] = useState({ name: "", phone: "" }),
+    [paymentAccount, setPaymentAccount] = useState({
+      bankCode: "",
+      accountNumber: "",
+      accountHolder: "",
+    }),
+    [paymentAccountError, setPaymentAccountError] = useState(""),
+    [paymentAccountSaving, setPaymentAccountSaving] = useState(false),
     [error, setError] = useState(""),
     [saving, setSaving] = useState(false);
   const load = () => {
@@ -383,9 +555,18 @@ export function Profile() {
       })
       .catch((requestError) => setError(requestError.message));
   };
+  const loadPaymentAccount = () => {
+    setPaymentAccountError("");
+    api("/payment-account")
+      .then(setPaymentAccount)
+      .catch((requestError) =>
+        setPaymentAccountError(requestError.message),
+      );
+  };
   useEffect(() => {
     load();
-  }, [user.id]);
+    if (user.role === "owner") loadPaymentAccount();
+  }, [user.id, user.role]);
   if (error) return <ErrorState message={error} onRetry={load} />;
   if (!data) return <PageLoading />;
   async function save(e) {
@@ -403,6 +584,23 @@ export function Profile() {
       toast.error(e.message);
     } finally {
       setSaving(false);
+    }
+  }
+  async function savePaymentAccount(e) {
+    e.preventDefault();
+    setPaymentAccountSaving(true);
+    setPaymentAccountError("");
+    try {
+      const updated = await api("/payment-account", {
+        method: "PUT",
+        body: JSON.stringify(paymentAccount),
+      });
+      setPaymentAccount(updated);
+      toast.success("Đã lưu tài khoản nhận tiền cọc");
+    } catch (requestError) {
+      setPaymentAccountError(requestError.message);
+    } finally {
+      setPaymentAccountSaving(false);
     }
   }
   return (
@@ -472,6 +670,96 @@ export function Profile() {
           </Button>
         </form>
       </div>
+      {user.role === "owner" && (
+        <form
+          onSubmit={savePaymentAccount}
+          className="card mt-6 space-y-5 p-6"
+        >
+          <div>
+            <h2 className="text-xl font-bold">Tài khoản nhận tiền cọc</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Thông tin chỉ dùng để tạo QR chuyển khoản cho booking của bạn.
+              Tiền chuyển thẳng vào tài khoản này; chủ xe cần tự kiểm tra sao
+              kê và xác nhận đã nhận tiền.
+            </p>
+          </div>
+          <div>
+            <label className="label" htmlFor="payment-bank-code">
+              Mã ngân hàng SePay / VietQR
+            </label>
+            <input
+              id="payment-bank-code"
+              className="input"
+              autoComplete="off"
+              required
+              maxLength={30}
+              value={paymentAccount.bankCode}
+              onChange={(e) =>
+                setPaymentAccount({
+                  ...paymentAccount,
+                  bankCode: e.target.value,
+                })
+              }
+              placeholder="Ví dụ: Vietcombank hoặc MBBank"
+            />
+            <a
+              className="mt-1 inline-block text-xs font-semibold text-brand-700 underline"
+              href="https://vietqr.app/banks.json"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Tra cứu mã ngân hàng
+            </a>
+          </div>
+          <div>
+            <label className="label" htmlFor="payment-account-number">
+              Số tài khoản
+            </label>
+            <input
+              id="payment-account-number"
+              className="input"
+              autoComplete="off"
+              required
+              maxLength={19}
+              value={paymentAccount.accountNumber}
+              onChange={(e) =>
+                setPaymentAccount({
+                  ...paymentAccount,
+                  accountNumber: e.target.value,
+                })
+              }
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="payment-account-holder">
+              Tên chủ tài khoản
+            </label>
+            <input
+              id="payment-account-holder"
+              className="input"
+              autoComplete="off"
+              required
+              maxLength={80}
+              value={paymentAccount.accountHolder}
+              onChange={(e) =>
+                setPaymentAccount({
+                  ...paymentAccount,
+                  accountHolder: e.target.value,
+                })
+              }
+            />
+          </div>
+          {paymentAccountError && (
+            <p className="text-sm text-red-700" role="alert">
+              {paymentAccountError}
+            </p>
+          )}
+          <Button disabled={paymentAccountSaving}>
+            <Save size={17} />
+            {paymentAccountSaving ? "Đang lưu..." : "Lưu tài khoản nhận cọc"}
+          </Button>
+        </form>
+      )}
     </DashboardShell>
   );
 }

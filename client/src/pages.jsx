@@ -3316,13 +3316,14 @@ export function Contract() {
     canIssue =
       !c.id &&
       (isOwner || user?.role === "admin") &&
-      b.paymentStatus !== "Unpaid" &&
+      b.paymentStatus === "Paid" &&
       ["Accepted", "Deposit Required"].includes(b.status),
     alreadySigned = isOwner ? c.ownerSigned : isRenter ? c.renterSigned : true,
     canSign = Boolean(
       c.id &&
       (isOwner || isRenter) &&
       !alreadySigned &&
+      b.paymentStatus === "Paid" &&
       ["Accepted", "Deposit Required"].includes(b.status),
     );
   async function contractAction(kind) {
@@ -3364,6 +3365,8 @@ export function Contract() {
               ? "Kiểm tra thông tin hai bên trước khi phát hành bản hợp đồng cố định."
               : b.paymentStatus === "Unpaid"
                 ? "Đang chờ người thuê hoàn tất thanh toán tiền cọc."
+                : b.paymentStatus === "Pending"
+                  ? "QR đã tạo; khoản cọc chưa được chủ xe xác nhận."
                 : "Vui lòng chờ chủ xe chấp nhận yêu cầu và phát hành hợp đồng."}
           </p>
           {canIssue && (
@@ -3434,7 +3437,7 @@ export function Contract() {
                 `Trả xe: ${b.returnLocation}`,
                 `Tổng thanh toán: ${money(b.totalPrice)}`,
                 `Tiền cọc hoàn lại: ${money(b.deposit)}`,
-                `Trạng thái tiền cọc: ${b.paymentStatus === "Paid" ? "Đã thanh toán" : b.paymentStatus === "Unpaid" ? "Chưa thanh toán" : "Chưa áp dụng"}`,
+                `Trạng thái tiền cọc: ${b.paymentStatus === "Paid" ? "Đã xác nhận" : b.paymentStatus === "Pending" ? "Chờ chủ xe xác nhận" : b.paymentStatus === "Unpaid" ? "Chưa thanh toán" : "Chưa áp dụng"}`,
               ]}
             />
           </div>

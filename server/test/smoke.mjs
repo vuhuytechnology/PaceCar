@@ -82,6 +82,36 @@ try {
   const owner = await login("owner@pacecar.vn");
   const unrelatedOwner = await login("tung@pacecar.vn");
   const admin = await login("admin@pacecar.vn");
+  assert.equal(
+    (await request("/payment-account", { token: renter })).status,
+    403,
+  );
+  const invalidPaymentAccount = await request("/payment-account", {
+    method: "PUT",
+    token: owner,
+    body: JSON.stringify({
+      bankCode: "MB",
+      accountNumber: "bad account",
+      accountHolder: "PaceCar Test",
+    }),
+  });
+  assert.equal(invalidPaymentAccount.status, 422);
+  const paymentAccount = await request("/payment-account", {
+    method: "PUT",
+    token: owner,
+    body: JSON.stringify({
+      bankCode: "MBBank",
+      accountNumber: "0123456789",
+      accountHolder: "NGUYEN VAN A",
+    }),
+  });
+  assert.equal(paymentAccount.status, 200);
+  assert.equal(paymentAccount.body.accountNumber, "0123456789");
+  assert.equal(
+    (await request("/payment-account", { token: unrelatedOwner })).body
+      .accountNumber,
+    "",
+  );
 
   const renterDashboard = await request("/dashboard/renter/1", {
     token: renter,
@@ -673,6 +703,7 @@ try {
   });
   assert.equal(renterView.status, 200);
   assert.equal("documents" in renterView.body.car, false);
+  assert.equal("accountNumber" in renterView.body.owner, false);
 
   const forbiddenView = await request(`/bookings/${booking.body.id}`, {
     token: unrelatedOwner,
@@ -696,11 +727,100 @@ try {
   const payment = await request(`/bookings/${booking.body.id}/payment`, {
     method: "POST",
     token: renter,
-    body: JSON.stringify({ method: "demo" }),
+    body: JSON.stringify({}),
   });
-  assert.equal(payment.status, 200, JSON.stringify(payment.body));
-  assert.equal(payment.body.paymentStatus, "Paid");
+  assert.equal(payment.status, 201, JSON.stringify(payment.body));
+  assert.equal(payment.body.paymentStatus, "Pending");
   assert.equal(payment.body.amount, booking.body.deposit);
+  assert.equal(
+    (
+      await request("/contracts", {
+        method: "POST",
+        token: owner,
+        body: JSON.stringify({ bookingId: booking.body.id }),
+      })
+    ).status,
+    409,
+  );
+  assert.equal(new URL(payment.body.qrUrl).hostname, "vietqr.app");
+  const qrParams = new URL(payment.body.qrUrl).searchParams;
+  assert.equal(qrParams.get("acc"), "0123456789");
+  assert.equal(qrParams.get("amount"), String(booking.body.deposit));
+  assert.equal(qrParams.get("des"), payment.body.transferCode);
+  assert.match(payment.body.transferCode, /^PC\d+P\d+$/);
+  const reusedPayments = await Promise.all([
+    request(`/bookings/${booking.body.id}/payment`, {
+      method: "POST",
+      token: renter,
+      body: JSON.stringify({}),
+    }),
+    request(`/bookings/${booking.body.id}/payment`, {
+      method: "POST",
+      token: renter,
+      body: JSON.stringify({}),
+    }),
+  ]);
+  assert.ok(reusedPayments.every((result) => result.status === 200));
+  assert.ok(
+    reusedPayments.every(
+      (result) =>
+        result.body.paymentId === payment.body.paymentId &&
+        result.body.transferCode === payment.body.transferCode,
+    ),
+  );
+  const ownerBookingView = await request(`/bookings/${booking.body.id}`, {
+    token: owner,
+  });
+  assert.equal(ownerBookingView.body.pendingPayment.amount, booking.body.deposit);
+  assert.equal(
+    ownerBookingView.body.pendingPayment.transferCode,
+    payment.body.transferCode,
+  );
+  assert.equal(
+    (
+      await request(`/bookings/${booking.body.id}/payment/confirm`, {
+        method: "POST",
+        token: renter,
+        body: JSON.stringify({ confirmedReceived: true }),
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(`/bookings/${booking.body.id}/payment/confirm`, {
+        method: "POST",
+        token: owner,
+        body: JSON.stringify({ confirmedReceived: false }),
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await request(`/bookings/${booking.body.id}/payment`, {
+        method: "POST",
+        token: unrelatedOwner,
+        body: JSON.stringify({}),
+      })
+    ).status,
+    403,
+  );
+  const confirmedPayments = await Promise.all([
+    request(`/bookings/${booking.body.id}/payment/confirm`, {
+      method: "POST",
+      token: owner,
+      body: JSON.stringify({ confirmedReceived: true }),
+    }),
+    request(`/bookings/${booking.body.id}/payment/confirm`, {
+      method: "POST",
+      token: owner,
+      body: JSON.stringify({ confirmedReceived: true }),
+    }),
+  ]);
+  assert.ok(confirmedPayments.every((result) => result.status === 200));
+  assert.ok(confirmedPayments.every((result) => result.body.paymentStatus === "Paid"));
+  assert.ok(confirmedPayments.every((result) => result.body.amount === booking.body.deposit));
 
   const contract = await request("/contracts", {
     method: "POST",

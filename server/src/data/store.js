@@ -159,6 +159,8 @@ function migrateData(data) {
   data.termsConsents ||= [];
   data.reports ||= [];
   data.commissions ||= [];
+  data.paymentAccounts ||= [];
+  data.payments ||= [];
   data.promotions ||= [
     {
       id: 1,

@@ -152,7 +152,7 @@ export function registerDealRoutes(app, { read, write, find, requireRole, canAcc
       const d = read(),
         booking = ownBooking(d, req, res, ["owner"]);
       if (!booking) return;
-      if (!REVISABLE_STATUSES.includes(booking.status) || booking.paymentStatus === "Paid")
+      if (!REVISABLE_STATUSES.includes(booking.status) || booking.paymentStatus !== "Unpaid")
         return fail(res, 409, "Chỉ điều chỉnh báo giá trước khi người thuê đặt cọc");
       const snap = booking.pricingSnapshot;
       if (!snap || !Number.isSafeInteger(booking.totalPrice))
@@ -240,7 +240,7 @@ export function registerDealRoutes(app, { read, write, find, requireRole, canAcc
         return fail(res, 400, "Quyết định không hợp lệ");
       if (revision.status !== "Proposed")
         return fail(res, 409, "Báo giá này không còn chờ xác nhận");
-      if (!REVISABLE_STATUSES.includes(booking.status) || booking.paymentStatus === "Paid")
+      if (!REVISABLE_STATUSES.includes(booking.status) || booking.paymentStatus !== "Unpaid")
         return fail(res, 409, "Booking không còn ở bước xác nhận giá");
       revision.respondedBy = req.authUser.id;
       revision.respondedAt = now();

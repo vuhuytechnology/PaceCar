@@ -78,7 +78,7 @@ export function PriceConfirmationPanel({ booking, user, reload }) {
   const isRenter = user?.role === "renter" && user.id === booking.renterId;
   const open =
     ["Pending", "Accepted", "Deposit Required"].includes(booking.status) &&
-    booking.paymentStatus !== "Paid";
+    booking.paymentStatus === "Unpaid";
   if (!revisions.length && !(isOwner && open)) return null;
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
   const row = (label, before, after) =>

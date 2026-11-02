@@ -104,6 +104,16 @@ try {
   const owner = await login("owner@pacecar.vn");
   const unrelatedOwner = await login("tung@pacecar.vn");
   const admin = await login("admin@pacecar.vn");
+  assert.equal(
+    (
+      await send("/payment-account", "PUT", owner, {
+        bankCode: "MBBank",
+        accountNumber: "0123456789",
+        accountHolder: "NGUYEN VAN A",
+      })
+    ).status,
+    200,
+  );
 
   const consent = (quote, overrides = {}) => ({
     policyVersion: quote.policyVersion,
@@ -140,7 +150,17 @@ try {
   };
   const completeBooking = async (id) => {
     assert.equal((await send(`/bookings/${id}/status`, "PUT", owner, { status: "Accepted" })).status, 200);
-    assert.equal((await send(`/bookings/${id}/payment`, "POST", renter)).status, 200);
+    const payment = await send(`/bookings/${id}/payment`, "POST", renter);
+    assert.equal(payment.status, 201);
+    assert.equal(payment.body.paymentStatus, "Pending");
+    assert.equal(
+      (
+        await send(`/bookings/${id}/payment/confirm`, "POST", owner, {
+          confirmedReceived: true,
+        })
+      ).status,
+      200,
+    );
     assert.equal((await send("/contracts", "POST", owner, { bookingId: id })).status, 201);
     for (const token of [renter, owner])
       assert.equal((await send(`/contracts/${id}/sign`, "PUT", token, { consent: true })).status, 200);
@@ -278,14 +298,47 @@ try {
   assert.equal((await send(`${revisionPath}/${first.body.id}`, "PUT", renter, { decision: "accept" })).status, 409);
   assert.equal((await send(`${revisionPath}/${second.body.id}`, "PUT", renter, { decision: "reject" })).status, 200);
   assert.equal((await request(`/bookings/${pickup.id}`, { token: renter })).body.totalPrice, q1.totalPrice + 80000);
-  assert.equal((await send(`/bookings/${pickup.id}/payment`, "POST", renter)).status, 200);
+  const pickupPayment = await send(`/bookings/${pickup.id}/payment`, "POST", renter);
+  assert.equal(pickupPayment.status, 201);
+  assert.equal(pickupPayment.body.paymentStatus, "Pending");
+  assert.equal(
+    (await send(`${revisionPath}`, "POST", owner, { reason: "pending transfer", otherFee: 1, otherFeeLabel: "x" })).status,
+    409,
+    "price cannot change while a transfer QR is pending",
+  );
+  assert.equal(
+    (await send(`/bookings/${pickup.id}/payment/confirm`, "POST", owner, { confirmedReceived: true })).status,
+    200,
+  );
   assert.equal((await send(revisionPath, "POST", owner, { reason: "too late", otherFee: 1, otherFeeLabel: "x" })).status, 409, "no price change after deposit");
   // Contract signing is blocked while a proposal is pending.
   const pending = await bookingFor("2028-04-03", "2028-04-04");
   await send(`/bookings/${pending.booking.id}/status`, "PUT", owner, { status: "Accepted" });
-  await send(`/bookings/${pending.booking.id}/payment`, "POST", renter);
-  await send("/contracts", "POST", owner, { bookingId: pending.booking.id });
+  const pendingPayment = await send(`/bookings/${pending.booking.id}/payment`, "POST", renter);
+  assert.equal(pendingPayment.status, 201);
+  assert.equal(
+    (await send("/contracts", "POST", owner, { bookingId: pending.booking.id })).status,
+    409,
+    "contract cannot be issued before owner confirms the transfer",
+  );
   assert.equal((await send(`/bookings/${pending.booking.id}/price-revisions`, "POST", owner, { reason: "x".repeat(6), otherFee: 1, otherFeeLabel: "x" })).status, 409);
+  assert.equal(
+    (await send(`/bookings/${pending.booking.id}/payment/cancel`, "POST", owner, {})).status,
+    400,
+    "owner must confirm no transfer before cancelling the QR",
+  );
+  const cancelledPayment = await send(
+    `/bookings/${pending.booking.id}/payment/cancel`,
+    "POST",
+    owner,
+    { confirmedNoTransfer: true },
+  );
+  assert.equal(cancelledPayment.status, 200);
+  assert.equal(cancelledPayment.body.paymentStatus, "Unpaid");
+  assert.equal(
+    (await send(`/bookings/${pending.booking.id}/price-revisions`, "POST", owner, { reason: "after cancelled QR", otherFee: 1, otherFeeLabel: "x" })).status,
+    201,
+  );
 
   // Complete a journey: deposit refund (form C) and commission
   const rental = await bookingFor("2028-05-01", "2028-05-04");
