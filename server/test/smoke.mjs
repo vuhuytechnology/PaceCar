@@ -1016,13 +1016,6 @@ try {
   const documentUpload = new FormData();
   documentUpload.append(
     "files",
-    new Blob([Buffer.from("%PDF-1.4 QA registration")], {
-      type: "application/pdf",
-    }),
-    "registration.pdf",
-  );
-  documentUpload.append(
-    "files",
     new Blob([Buffer.from("%PDF-1.4 QA insurance")], {
       type: "application/pdf",
     }),
@@ -1074,10 +1067,7 @@ try {
       minRentalDays: 1,
       maxRentalDays: 30,
       photos: carPhotos.body.files.map((file) => file.url),
-      documents: [
-        { type: "registration", assetId: uploadedDocuments.body.files[0].id },
-        { type: "insurance", assetId: uploadedDocuments.body.files[1].id },
-      ],
+      documents: [{ type: "insurance", assetId: uploadedDocuments.body.files[0].id }],
       rules: { mileageLimit: 300, lateFeePerHour: 120000 },
       deliveryOptions: {
         ownerDelivery: false,

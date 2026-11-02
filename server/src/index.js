@@ -449,7 +449,6 @@ const listingErrors = (car) => {
   if (!Array.isArray(car.documents))
     errors.push("Danh sách giấy tờ không hợp lệ");
   const documentTypes = new Set(documents.map((d) => d?.type));
-  if (!documentTypes.has("registration")) errors.push("Thiếu đăng ký xe");
   if (!documentTypes.has("insurance")) errors.push("Thiếu bảo hiểm xe");
   const rules = car.rules;
   if (rules != null && (typeof rules !== "object" || Array.isArray(rules)))
