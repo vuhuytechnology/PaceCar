@@ -55,13 +55,13 @@ Persona: khách hàng ở Hà Nội, thuê xe tự lái để đi Hải Phòng, 
 2. Tìm xe, mở một xe phù hợp và kiểm tra báo giá hiển thị `16 giờ (tính 1 ngày)`.
 3. Tiếp tục đặt xe, đăng nhập `renter@pacecar.vn`, đồng ý điều khoản và gửi yêu cầu.
 4. Đăng nhập `owner@pacecar.vn`, mở **Đơn thuê xe** và chấp nhận yêu cầu.
-5. Đăng nhập lại tài khoản người thuê, mở **Đơn thuê xe** và chọn **Thanh toán cọc (demo)**.
+5. Đăng nhập lại người thuê, mở **Đơn thuê xe** và chọn **Tạo QR chuyển cọc**. Quét QR hoặc đối chiếu mã chuyển khoản; booking vẫn chờ đến khi chủ xe xác nhận đã nhận đủ tiền.
 6. Chủ xe mở hợp đồng, phát hành và ký; người thuê đăng nhập để ký phần còn lại.
 7. Tại thời điểm nhận xe, mở **Giao nhận**, tải ảnh, nhập nhiên liệu/ODO và lưu biên bản check-in.
 8. Khi trả xe, lưu biên bản check-out tương tự. Chủ xe xác nhận **Hoàn tất chuyến**.
 9. Người thuê kiểm tra trạng thái `Completed` và gửi đánh giá chuyến đi.
 
-Thanh toán trong kịch bản này chỉ là mô phỏng, không thu tiền thật. Nếu người test không biết phải bấm gì tiếp theo ở bất kỳ bước nào, ghi lại ảnh màn hình, vai trò đăng nhập và trạng thái booking để xem đó là một vấn đề UX cần cải thiện.
+Để chạy kịch bản thanh toán, chủ xe cần cấu hình mã ngân hàng, số tài khoản và tên chủ tài khoản tại **Hồ sơ cá nhân → Tài khoản nhận tiền cọc**. QR gửi tiền trực tiếp cho chủ xe; chủ xe phải kiểm tra giao dịch thực tế trước khi bấm **Xác nhận đã nhận cọc**. Không xác nhận dựa trên ảnh chụp do người thuê gửi. Xem thêm [hướng dẫn SePay](./SEPAY_SETUP.md). Nếu người test không biết phải bấm gì tiếp theo ở bất kỳ bước nào, ghi lại ảnh màn hình, vai trò đăng nhập và trạng thái booking để xem đó là một vấn đề UX cần cải thiện.
 
 ## 5. Kiểm tra trước khi test
 
@@ -71,6 +71,12 @@ npm run build
 ```
 
 `npm test` dùng database tạm nên không làm thay đổi dữ liệu demo.
+
+Smoke test backend kiểm tra API tìm kiếm/bộ lọc và chi tiết xe; báo giá do
+server tính; dashboard theo vai trò; tạo và quản lý booking; thanh toán cọc mô
+phỏng; hợp đồng; bằng chứng check-in/check-out và hoàn tất chuyến; đánh giá,
+tranh chấp, đăng/duyệt xe, Trust Score và Risk Level/cảnh báo. Bộ test dùng
+database và thư mục upload tạm, không sửa dữ liệu demo.
 
 ## 6. Xử lý lỗi thường gặp
 
