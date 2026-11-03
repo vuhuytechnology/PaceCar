@@ -4182,12 +4182,15 @@ function AuthorizedEvidenceImage({ asset, alt }) {
 export function Dispute() {
   const { bookingId } = useParams(),
     toast = useToast();
+  const { user } = useAuth();
   const bookingFetch = useFetch("/bookings/" + bookingId),
     disputesFetch = useFetch(`/disputes?bookingId=${bookingId}`);
   const [reason, setReason] = useState("New scratch"),
     [desc, setDesc] = useState(""),
     [files, setFiles] = useState([]),
-    [submitting, setSubmitting] = useState(false);
+    [submitting, setSubmitting] = useState(false),
+    [adminDecision, setAdminDecision] = useState(null),
+    [adminSaving, setAdminSaving] = useState(false);
   async function submit(e) {
     e.preventDefault();
     if (!files.length) {
@@ -4222,13 +4225,21 @@ export function Dispute() {
       setSubmitting(false);
     }
   }
-  const steps = [
-    "Chủ xe gửi khiếu nại trong 24h",
-    "PaceCar xem xét bằng chứng",
-    "Người thuê phản hồi",
-    "Quyết định trong 24–72h",
-    "Hoàn cọc hoặc khấu trừ một phần",
-  ];
+  const steps =
+    user?.role === "admin"
+      ? [
+          "Xem nội dung và ảnh bằng chứng",
+          "Đánh dấu đang xem xét",
+          "Nhập kết luận xử lý",
+          "Xác nhận giải quyết",
+        ]
+      : [
+          "Chủ xe gửi khiếu nại trong 24h",
+          "PaceCar xem xét bằng chứng",
+          "Người thuê phản hồi",
+          "Quyết định trong 24–72h",
+          "Hoàn cọc hoặc khấu trừ một phần",
+        ];
   const error = bookingFetch.error || disputesFetch.error;
   if (error)
     return (
@@ -4245,7 +4256,54 @@ export function Dispute() {
     existing =
       disputesFetch.data?.find((item) => item.status !== "Resolved") ||
       disputesFetch.data?.[0],
-    eligible = ["Ongoing", "Check-out Review"].includes(booking?.status);
+    eligible = ["Ongoing", "Check-out Review"].includes(booking?.status),
+    completedSteps =
+      user?.role === "admin"
+        ? existing?.status === "Resolved"
+          ? steps.length
+          : existing?.status === "Under review"
+            ? 2
+            : existing
+              ? 1
+              : 0
+        : existing
+          ? 1
+          : 0;
+  async function updateDisputeStatus(status) {
+    const decision = String(
+      adminDecision ?? existing?.decision ?? "",
+    ).trim();
+    if (status === "Resolved" && !decision) {
+      toast("Vui lòng nhập quyết định giải quyết");
+      return;
+    }
+    if (
+      status === "Resolved" &&
+      !window.confirm(
+        "Giải quyết tranh chấp sẽ chuyển đơn thuê sang trạng thái Hoàn tất. Tiếp tục?",
+      )
+    )
+      return;
+    setAdminSaving(true);
+    try {
+      await api(`/disputes/${existing.id}/status`, {
+        method: "PUT",
+        body: JSON.stringify({ status, decision }),
+      });
+      toast(
+        status === "Resolved"
+          ? "Đã giải quyết tranh chấp"
+          : "Đã chuyển tranh chấp sang đang xem xét",
+      );
+      setAdminDecision(null);
+      disputesFetch.reload();
+      bookingFetch.reload();
+    } catch (actionError) {
+      toast(actionError.message);
+    } finally {
+      setAdminSaving(false);
+    }
+  }
   return (
     <div className="container-app max-w-5xl py-12">
       <PageHead
@@ -4259,7 +4317,56 @@ export function Dispute() {
             <h2 className="text-xl font-bold">Thông tin sự việc</h2>
             <StatusBadge status={existing?.status || "Chưa mở"} />
           </div>
-          {existing ? (
+          {user?.role === "admin" ? (
+            existing ? (
+              <div className="space-y-5 rounded-xl bg-blue-50 p-5 text-sm text-blue-900">
+                <div>
+                  <b>Tranh chấp #{existing.id}</b>
+                  <p className="mt-2 font-semibold">{existing.reason}</p>
+                  <p className="mt-1 whitespace-pre-wrap text-blue-700">
+                    {existing.description || "Không có mô tả bổ sung."}
+                  </p>
+                  <p className="mt-3 text-blue-800">
+                    Xe: <b>{booking?.car?.name || "Không rõ"}</b> · Trạng thái
+                    đơn: <b>{booking?.status || "—"}</b>
+                  </p>
+                </div>
+                <section>
+                  <h3 className="mb-3 font-bold">
+                    Ảnh bằng chứng ({existing.evidence?.length || 0})
+                  </h3>
+                  {existing.evidence?.length ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {existing.evidence.map((assetId, index) => (
+                        <AuthorizedEvidenceImage
+                          key={assetId}
+                          asset={assetId}
+                          alt={`Bằng chứng ${index + 1} của tranh chấp ${existing.id}`}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <p>Tranh chấp chưa đính kèm ảnh bằng chứng.</p>
+                  )}
+                </section>
+                {existing.decision && (
+                  <p className="border-t border-blue-200 pt-3">
+                    <b>Quyết định:</b> {existing.decision}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-xl bg-slate-50 p-5 text-sm text-slate-700">
+                Booking này chưa có tranh chấp.
+                <Link
+                  to="/admin/disputes"
+                  className="mt-3 block font-semibold text-brand-700 hover:underline"
+                >
+                  Quay lại danh sách tranh chấp
+                </Link>
+              </div>
+            )
+          ) : existing ? (
             <div className="rounded-xl bg-blue-50 p-5 text-sm text-blue-900">
               <b>Tranh chấp #{existing.id}</b>
               <p className="mt-2">{existing.reason}</p>
@@ -4322,26 +4429,86 @@ export function Dispute() {
               </Button>
             </>
           )}
+          {user?.role === "admin" && (
+            <div className="space-y-4 border-t pt-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h3 className="font-bold">Thao tác quản trị</h3>
+                <Link
+                  to="/admin/disputes"
+                  className="text-sm font-semibold text-brand-700 hover:underline"
+                >
+                  Danh sách tất cả tranh chấp
+                </Link>
+              </div>
+              {existing?.status === "Resolved" ? (
+                <p className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">
+                  Tranh chấp này đã được giải quyết.
+                </p>
+              ) : existing ? (
+                <>
+                  <Field label="Quyết định xử lý">
+                    <textarea
+                      className="input"
+                      rows="4"
+                      maxLength={3000}
+                      value={adminDecision ?? existing.decision ?? ""}
+                      onChange={(event) =>
+                        setAdminDecision(event.target.value)
+                      }
+                      placeholder="Ghi rõ kết luận và hướng xử lý..."
+                    />
+                  </Field>
+                  <div className="flex flex-wrap gap-3">
+                    {existing.status !== "Under review" && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={adminSaving}
+                        onClick={() => updateDisputeStatus("Under review")}
+                      >
+                        Đánh dấu đang xem xét
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      disabled={adminSaving}
+                      onClick={() => updateDisputeStatus("Resolved")}
+                    >
+                      {adminSaving ? "Đang lưu..." : "Giải quyết tranh chấp"}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-slate-600">
+                  Chọn một tranh chấp trong danh sách để xem bằng chứng và xử lý.
+                </p>
+              )}
+            </div>
+          )}
         </form>
         <aside className="card p-6 lg:col-span-2">
           <h2 className="text-xl font-bold">Quy trình xử lý</h2>
           <div className="mt-6">
             {steps.map((x, i) => (
               <div className="relative flex gap-4 pb-7 last:pb-0" key={x}>
-                {i < 4 && (
+                {i < steps.length - 1 && (
                   <span className="absolute left-4 top-8 h-full w-px bg-slate-200" />
                 )}
                 <span
-                  className={`relative grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm font-bold ${existing && i === 0 ? "bg-emerald-500 text-white" : "bg-brand-100 text-brand-700"}`}
+                  className={`relative grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm font-bold ${i < completedSteps ? "bg-emerald-500 text-white" : "bg-brand-100 text-brand-700"}`}
                 >
-                  {existing && i === 0 ? <Check size={16} /> : i + 1}
+                  {i < completedSteps ? <Check size={16} /> : i + 1}
                 </span>
                 <div>
                   <b className="text-sm">{x}</b>
                   <p className="mt-1 text-xs text-slate-500">
-                    {i === 3
-                      ? "Cam kết SLA minh bạch"
-                      : "Dựa trên bằng chứng đã xác thực"}
+                    {user?.role === "admin"
+                      ? i === steps.length - 1
+                        ? "Booking sẽ chuyển sang Hoàn tất"
+                        : "Thao tác trong mục quản trị bên trái"
+                      : i === 3
+                        ? "Cam kết SLA minh bạch"
+                        : "Dựa trên bằng chứng đã xác thực"}
                   </p>
                 </div>
               </div>
