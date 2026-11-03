@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
 import { seed } from "./seed.js";
+import { RENTAL_POLICY_DEFAULTS, RENTAL_POLICY_VERSION } from "../policy.js";
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const file = process.env.PACECAR_DB_FILE
   ? path.resolve(process.env.PACECAR_DB_FILE)
@@ -200,20 +201,15 @@ function migrateData(data) {
     },
   ];
   data.pricingPolicy ||= {
-    version: "PC-2026.3",
+    version: RENTAL_POLICY_VERSION,
+    ...RENTAL_POLICY_DEFAULTS,
     platformFeeRate: 0.1,
     insurancePerDay: 80000,
     weekendSurchargeRate: 0.15,
     driverFeePerDay: 350000,
-    handoverSupportedFrom: "06:00",
-    handoverSupportedUntil: "22:00",
     handoverStandardFrom: "08:00",
     handoverStandardUntil: "20:00",
     handoverOutsideFee: 100000,
-    longRentalDiscounts: [
-      { minDays: 7, rate: 0.1 },
-      { minDays: 3, rate: 0.05 },
-    ],
     quoteTtlMinutes: 15,
   };
   if (data.pricingPolicy.driverFeePerDay == null) {
@@ -221,8 +217,8 @@ function migrateData(data) {
     changed = true;
   }
   const handoverDefaults = {
-    handoverSupportedFrom: "06:00",
-    handoverSupportedUntil: "22:00",
+    handoverSupportedFrom: "00:00",
+    handoverSupportedUntil: "23:59",
     handoverStandardFrom: "08:00",
     handoverStandardUntil: "20:00",
     handoverOutsideFee: 100000,
@@ -233,9 +229,19 @@ function migrateData(data) {
       changed = true;
     }
   }
-  if (["PC-2026.1", "PC-2026.2"].includes(data.pricingPolicy.version)) {
-    data.pricingPolicy.version = "PC-2026.3";
+  if (
+    ["PC-2026.1", "PC-2026.2", "PC-2026.3"].includes(
+      data.pricingPolicy.version,
+    )
+  ) {
+    data.pricingPolicy.version = RENTAL_POLICY_VERSION;
     changed = true;
+  }
+  for (const [key, value] of Object.entries(RENTAL_POLICY_DEFAULTS)) {
+    if (JSON.stringify(data.pricingPolicy[key]) !== JSON.stringify(value)) {
+      data.pricingPolicy[key] = JSON.parse(JSON.stringify(value));
+      changed = true;
+    }
   }
   const welcomePromotion = data.promotions.find(
     (promotion) => promotion.code === "PACECAR10",

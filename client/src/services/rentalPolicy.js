@@ -1,9 +1,22 @@
 export const HANDOVER_POLICY = {
-  supportedFrom: "06:00",
-  supportedUntil: "22:00",
+  supportedFrom: "00:00",
+  supportedUntil: "23:59",
   standardFrom: "08:00",
   standardUntil: "20:00",
   outsideHoursFee: 100000,
+};
+
+export const RENTAL_POLICY = {
+  version: "PC-2026.4",
+  dailyMileageAllowanceKm: 250,
+  extraMileageFeePerKm: 3000,
+  longRentalMinDays: 5,
+  longRentalDiscountRate: 0.05,
+  deliveryFeePerKm: 10000,
+  batteryShortfallFeePerPercent: 2000,
+  pickupCollateralCash: 15000000,
+  weekendReturnDeadline: "21:00",
+  weekendLateFeePerHour: 50000,
 };
 
 const minutes = (value) => {

@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { api, apiBlob, money, upload } from "../services/api";
+import { RENTAL_POLICY } from "../services/rentalPolicy";
 import {
   Button,
   DashboardShell,
@@ -56,8 +57,9 @@ const initial = {
   photos: [],
   documents: [],
   amenities: [],
+  rentalPolicyVersion: "",
   rules: {
-    mileageLimit: 300,
+    mileageLimit: RENTAL_POLICY.dailyMileageAllowanceKm,
     lateFeePerHour: 120000,
     noSmoking: true,
     petsAllowed: false,
@@ -177,11 +179,10 @@ function validateListingStep(form, step) {
     )
       errors.push("Khoảng ngày thuê không hợp lệ");
     if (
-      form.deliveryOptions.ownerDelivery &&
-      (!Number.isFinite(Number(form.deliveryOptions.deliveryFee)) ||
-        Number(form.deliveryOptions.deliveryFee) < 0)
+      form.instantBooking &&
+      form.rentalPolicyVersion !== RENTAL_POLICY.version
     )
-      errors.push("Phí giao xe không hợp lệ");
+      errors.push("Cần xác nhận chính sách thuê xe hiện hành để bật đặt nhanh");
     return errors;
   }
   if (step === 3) {
@@ -227,7 +228,11 @@ export function CarListingWizard() {
           setForm({
             ...initial,
             ...car,
-            rules: { ...initial.rules, ...car.rules },
+            rules: {
+              ...initial.rules,
+              ...car.rules,
+              mileageLimit: RENTAL_POLICY.dailyMileageAllowanceKm,
+            },
             deliveryOptions: {
               ...initial.deliveryOptions,
               ...car.deliveryOptions,
@@ -238,6 +243,7 @@ export function CarListingWizard() {
         })
         .catch((e) => {
           toast.error(e.message);
+          setLoading(false);
           nav("/owner/cars");
         });
   }, [id]);
@@ -683,13 +689,14 @@ export function CarListingWizard() {
               <input
                 type="number"
                 className="input"
-                value={form.rules.mileageLimit}
-                onChange={(e) =>
-                  set("rules", { ...form.rules, mileageLimit: +e.target.value })
-                }
+                value={RENTAL_POLICY.dailyMileageAllowanceKm}
+                readOnly
               />
             </Field>
-            <Field label="Phí trả muộn/giờ">
+            <Field
+              label="Phí trả muộn ngày thường/giờ"
+              hint="Cuối tuần áp dụng riêng 50.000đ/giờ sau 21:00; qua 00:00 tính thêm ngày."
+            >
               <input
                 type="number"
                 className="input"
@@ -784,25 +791,34 @@ export function CarListingWizard() {
                   Cho phép đặt xe nhanh
                 </label>
                 {form.deliveryOptions.ownerDelivery && (
-                  <Field label="Phí giao nhận">
-                    <input
-                      type="number"
-                      className="input"
-                      value={form.deliveryOptions.deliveryFee || 0}
-                      onChange={(e) =>
-                        set("deliveryOptions", {
-                          ...form.deliveryOptions,
-                          deliveryFee: +e.target.value,
-                        })
-                      }
-                    />
-                  </Field>
+                  <p className="text-sm text-slate-600">
+                    Phí giao một chiều 10.000đ/km tính từ điểm bàn giao; người
+                    thuê nhập quãng đường và bạn xác nhận trước khi chấp nhận.
+                  </p>
                 )}
               </div>
               <p className="mt-3 text-xs text-slate-500">
                 Đặt nhanh chỉ tự động chấp nhận người thuê đã xác thực, Trust
-                Score tốt và không trùng lịch.
+                Score tốt, không trùng lịch và xe đã xác nhận chính sách hiện
+                hành. Yêu cầu giao xe luôn cần bạn xác nhận quãng đường.
               </p>
+              <label className="mt-4 flex gap-2 rounded-xl border p-4 text-sm">
+                <input
+                  type="checkbox"
+                  checked={form.rentalPolicyVersion === RENTAL_POLICY.version}
+                  onChange={(event) =>
+                    set(
+                      "rentalPolicyVersion",
+                      event.target.checked ? RENTAL_POLICY.version : "",
+                    )
+                  }
+                />
+                <span>
+                  Tôi xác nhận tuân thủ chính sách thuê hiện hành: 250 km/ngày,
+                  mức vượt km, quy tắc cuối tuần, phí pin xe điện, kiểm tra VNeID
+                  và tài sản bảo đảm khi bàn giao.
+                </span>
+              </label>
             </div>
           </div>
         )}

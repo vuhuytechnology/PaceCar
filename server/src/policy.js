@@ -4,6 +4,28 @@
 export const TERMS_VERSION = "PC-TERMS-2026.2-DRAFT";
 export const TERMS_STATUS = "draft";
 
+export const RENTAL_POLICY_VERSION = "PC-2026.4";
+export const RENTAL_POLICY_DEFAULTS = {
+  version: RENTAL_POLICY_VERSION,
+  dailyMileageAllowanceKm: 250,
+  extraMileageFeePerKm: 3000,
+  deliveryFeePerKm: 10000,
+  deliveryAvailable24Hours: true,
+  handoverSupportedFrom: "00:00",
+  handoverSupportedUntil: "23:59",
+  weekendReturnDeadline: "21:00",
+  weekendLateFeePerHour: 50000,
+  weekendAfterMidnightExtraDays: 1,
+  weekendDays: [0, 6],
+  batteryShortfallFeePerPercent: 2000,
+  pickupCollateralCash: 15000000,
+  ownerPolicyConfirmationRequired: true,
+  renterIdentityRequiredBeforePickup: true,
+  ownerVneidCheckRequired: true,
+  handoverVideoReviewRequired: true,
+  longRentalDiscounts: [{ minDays: 5, rate: 0.05 }],
+};
+
 // Commission: proposal only. Tiers apply one rate to the whole base (not
 // progressive). Rates are in basis points to keep the math in integers.
 export const COMMISSION_POLICY_VERSION = "PC-COMM-2026.0-PROPOSED";

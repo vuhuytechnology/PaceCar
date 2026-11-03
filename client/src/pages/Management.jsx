@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { api, date, dateTime, money } from "../services/api";
+import { RENTAL_POLICY } from "../services/rentalPolicy";
 import {
   Button,
   CarCard,
@@ -82,7 +83,14 @@ export function MyBookings() {
     try {
       await api(`/bookings/${decision.id}/status`, {
         method: "PUT",
-        body: JSON.stringify({ status: decision.status, actorId: user.id }),
+        body: JSON.stringify({
+          status: decision.status,
+          actorId: user.id,
+          ownerPolicyConfirmed: decision.ownerPolicyConfirmed === true,
+          confirmedDeliveryDistanceKm: Number(
+            decision.confirmedDeliveryDistanceKm,
+          ),
+        }),
       });
       toast.success("Đã cập nhật đơn thuê");
       setDecision(null);
@@ -200,7 +208,19 @@ export function MyBookings() {
       </>
     ) : user.role === "owner" && b.status === "Pending" ? (
       <>
-        <Button onClick={() => setDecision({ id: b.id, status: "Accepted" })}>
+        <Button
+          onClick={() =>
+            setDecision({
+              id: b.id,
+              status: "Accepted",
+              policyVersion: b.pricingSnapshot?.policyVersion,
+              pickupOption: b.pickupOption,
+              deliveryDistanceKm: b.deliveryDistanceKm,
+              confirmedDeliveryDistanceKm: b.deliveryDistanceKm,
+              ownerPolicyConfirmed: false,
+            })
+          }
+        >
           Chấp nhận
         </Button>
         <Button
@@ -462,12 +482,61 @@ export function MyBookings() {
             <Button variant="outline" onClick={() => setDecision(null)}>
               Quay lại
             </Button>
-            <Button onClick={update}>Xác nhận</Button>
+            <Button
+              onClick={update}
+              disabled={
+                decision?.status === "Accepted" &&
+                user.role === "owner" &&
+                decision.policyVersion === RENTAL_POLICY.version &&
+                decision.ownerPolicyConfirmed !== true
+              }
+            >
+              Xác nhận
+            </Button>
           </>
         }
       >
-        Trạng thái đơn #{decision?.id} sẽ chuyển thành <b>{decision?.status}</b>{" "}
-        và được ghi vào audit log.
+        <p>
+          Trạng thái đơn #{decision?.id} sẽ chuyển thành{" "}
+          <b>{decision?.status}</b> và được ghi vào audit log.
+        </p>
+        {decision?.status === "Accepted" &&
+          user.role === "owner" &&
+          decision.policyVersion === RENTAL_POLICY.version && (
+            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
+              {decision.pickupOption === "delivery" && (
+                <p className="mb-3">
+                  Quãng đường giao một chiều:{" "}
+                  <b>{decision.deliveryDistanceKm} km</b> · phí{" "}
+                  <b>
+                    {money(
+                      Number(decision.deliveryDistanceKm) *
+                        RENTAL_POLICY.deliveryFeePerKm,
+                    )}
+                  </b>
+                  . Chủ xe xác nhận quãng đường này trước khi nhận booking.
+                </p>
+              )}
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={decision.ownerPolicyConfirmed === true}
+                  onChange={(event) =>
+                    setDecision((current) => ({
+                      ...current,
+                      ownerPolicyConfirmed: event.target.checked,
+                    }))
+                  }
+                />
+                <span>
+                  Tôi xác nhận tuân thủ chính sách thuê hiện hành: 250 km/ngày,
+                  mức vượt km, phí giao, quy tắc cuối tuần và pin xe điện; khi
+                  nhận xe sẽ kiểm tra VNeID, tài sản bảo đảm, tiện ích/giấy tờ
+                  và video đối chiếu trực tiếp (không lưu video trên web).
+                </span>
+              </label>
+            </div>
+          )}
       </Modal>
       <Modal
         open={!!reviewing}

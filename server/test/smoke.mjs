@@ -530,7 +530,7 @@ try {
   const unsupportedHandoverSearch = await request(
     "/search/cars?startDate=2027-09-24&startTime=05%3A30&endDate=2027-09-24&endTime=20%3A00",
   );
-  assert.equal(unsupportedHandoverSearch.status, 422);
+  assert.equal(unsupportedHandoverSearch.status, 200);
 
   const sameDaySearch = await request(
     "/search/cars?location=H%C3%A0%20N%E1%BB%99i&startDate=2027-09-24&startTime=06%3A00&endDate=2027-09-24&endTime=22%3A00&driverOption=self",
@@ -558,7 +558,9 @@ try {
   assert.equal(sameDayQuote.body.weekendDays, 0);
   assert.equal(sameDayQuote.body.outsideHoursCount, 2);
   assert.equal(sameDayQuote.body.outsideHoursFee, 200000);
-  assert.equal(sameDayQuote.body.policyVersion, "PC-2026.3");
+  assert.equal(sameDayQuote.body.policyVersion, "PC-2026.4");
+  assert.equal(sameDayQuote.body.dailyMileageAllowanceKm, 250);
+  assert.equal(sameDayQuote.body.extraMileageFeePerKm, 3000);
   assert.equal(sameDayQuote.body.baseRental, sameDayQuote.body.pricePerDay);
   assert.equal(typeof sameDayQuote.body.platformFee, "number");
   assert.equal(typeof sameDayQuote.body.insuranceFee, "number");
@@ -590,15 +592,104 @@ try {
         endTime: "20:00",
         driverOption: "driver",
         pickupOption: "delivery",
+        pickupLocation: "Địa chỉ giao xe QA",
+        deliveryDistanceKm: 15,
     }),
   });
   assert.equal(addOnQuote.status, 201, JSON.stringify(addOnQuote.body));
   assert.equal(addOnQuote.body.driverFee, 350000);
   assert.equal(addOnQuote.body.deliveryFee, 150000);
+  assert.equal(addOnQuote.body.deliveryDistanceKm, 15);
   assert.equal(addOnQuote.body.insuranceFee, 80000);
   assert.equal(addOnQuote.body.platformFee, 100000);
   assert.equal(addOnQuote.body.deposit, 5000000);
   assert.equal(addOnQuote.body.totalPrice, 1330000);
+  const deliveryBooking = await request("/bookings", {
+    method: "POST",
+    token: renter,
+    headers: { "Idempotency-Key": "delivery-owner-confirmation" },
+    body: JSON.stringify({
+      quoteId: addOnQuote.body.quoteId,
+      consent: consentFor(addOnQuote.body),
+    }),
+  });
+  assert.equal(deliveryBooking.status, 201);
+  assert.equal(deliveryBooking.body.status, "Pending");
+  assert.equal(deliveryBooking.body.deliveryDistanceKm, 15);
+  const wrongDeliveryDistance = await request(
+    `/bookings/${deliveryBooking.body.id}/status`,
+    {
+      method: "PUT",
+      token: owner,
+      body: JSON.stringify({
+        status: "Accepted",
+        ownerPolicyConfirmed: true,
+        confirmedDeliveryDistanceKm: 14,
+      }),
+    },
+  );
+  assert.equal(wrongDeliveryDistance.status, 422);
+  const confirmedDeliveryDistance = await request(
+    `/bookings/${deliveryBooking.body.id}/status`,
+    {
+      method: "PUT",
+      token: owner,
+      body: JSON.stringify({
+        status: "Accepted",
+        ownerPolicyConfirmed: true,
+        confirmedDeliveryDistanceKm: 15,
+      }),
+    },
+  );
+  assert.equal(confirmedDeliveryDistance.status, 200);
+  const missingDeliveryDistance = await request("/quotes", {
+    method: "POST",
+    token: renter,
+    body: JSON.stringify({
+      carId: 1,
+      startDate: "2027-08-03",
+      startTime: "08:00",
+      endDate: "2027-08-03",
+      endTime: "20:00",
+      driverOption: "driver",
+      pickupOption: "delivery",
+      pickupLocation: "Địa chỉ giao xe QA",
+    }),
+  });
+  assert.equal(missingDeliveryDistance.status, 400);
+  const midnightQuote = await request("/quotes", {
+    method: "POST",
+    token: renter,
+    body: JSON.stringify({
+      carId: 1,
+      startDate: "2028-08-01",
+      startTime: "00:00",
+      endDate: "2028-08-01",
+      endTime: "00:30",
+      driverOption: "self",
+      pickupOption: "pickup",
+    }),
+  });
+  assert.equal(midnightQuote.status, 201);
+  const longRentalQuote = await request("/quotes", {
+    method: "POST",
+    token: renter,
+    body: JSON.stringify({
+      carId: 1,
+      startDate: "2028-08-01",
+      startTime: "08:00",
+      endDate: "2028-08-06",
+      endTime: "08:00",
+      driverOption: "self",
+      pickupOption: "pickup",
+    }),
+  });
+  assert.equal(longRentalQuote.status, 201);
+  assert.equal(longRentalQuote.body.days, 5);
+  assert.equal(
+    longRentalQuote.body.longRentalDiscount,
+    Math.round(longRentalQuote.body.baseRental * 0.05),
+  );
 
   const weekendEarlyQuote = await request("/quotes", {
     method: "POST",
@@ -608,13 +699,27 @@ try {
       startDate: "2027-09-25",
       startTime: "06:00",
       endDate: "2027-09-25",
-      endTime: "22:00",
+      endTime: "21:00",
       driverOption: "self",
       pickupOption: "pickup",
     }),
   });
   assert.equal(weekendEarlyQuote.status, 201);
   assert.equal(weekendEarlyQuote.body.weekendDays, 1);
+  const afterWeekendDeadline = await request("/quotes", {
+    method: "POST",
+    token: renter,
+    body: JSON.stringify({
+      carId: 2,
+      startDate: "2027-09-25",
+      startTime: "06:00",
+      endDate: "2027-09-25",
+      endTime: "21:01",
+      driverOption: "self",
+      pickupOption: "pickup",
+    }),
+  });
+  assert.equal(afterWeekendDeadline.status, 422);
   const sameDayQuoteDetail = await request(
     `/quotes/${sameDayQuote.body.quoteId}`,
     { token: renter },
@@ -766,10 +871,22 @@ try {
   });
   assert.equal(forbiddenView.status, 403);
 
+  const acceptanceWithoutPolicy = await request(
+    `/bookings/${booking.body.id}/status`,
+    {
+      method: "PUT",
+      token: owner,
+      body: JSON.stringify({ status: "Accepted" }),
+    },
+  );
+  assert.equal(acceptanceWithoutPolicy.status, 422);
   const accepted = await request(`/bookings/${booking.body.id}/status`, {
     method: "PUT",
     token: owner,
-    body: JSON.stringify({ status: "Accepted" }),
+    body: JSON.stringify({
+      status: "Accepted",
+      ownerPolicyConfirmed: true,
+    }),
   });
   assert.equal(accepted.status, 200);
 
@@ -940,6 +1057,63 @@ try {
   assert.equal(checkin.status, 201);
   assert.equal(checkin.body.fuelBefore, 80);
   assert.equal(checkin.body.odometerBefore, 24500);
+  assert.equal(
+    (
+      await request(`/bookings/${booking.body.id}`, { token: owner })
+    ).body.status,
+    "Ready for Check-in",
+  );
+  const ownerHandoverUpload = new FormData();
+  ownerHandoverUpload.append(
+    "files",
+    new Blob([Buffer.from("89504e470d0a1a0a", "hex")], { type: "image/png" }),
+    "owner-checkin.png",
+  );
+  ownerHandoverUpload.append("bookingId", String(booking.body.id));
+  const ownerHandoverPhotos = await request("/uploads/evidence", {
+    method: "POST",
+    token: owner,
+    body: ownerHandoverUpload,
+  });
+  assert.equal(ownerHandoverPhotos.status, 201);
+  const ownerCheckin = await request("/evidence", {
+    method: "POST",
+    token: owner,
+    body: JSON.stringify({
+      bookingId: booking.body.id,
+      phase: "checkin",
+      photos: [ownerHandoverPhotos.body.files[0].id],
+      fuel: 80,
+      odometer: 24500,
+      ownerHandoverConfirmed: true,
+      collateralType: "cash",
+      notes: "Owner verified CCCD/GPLX, VNeID, collateral and handover checklist",
+    }),
+  });
+  assert.equal(ownerCheckin.status, 200);
+  assert.equal(
+    ownerCheckin.body.ownerHandoverConfirmation.identityAndLicenseVerified,
+    true,
+  );
+  assert.equal(
+    (
+      await request(`/bookings/${booking.body.id}`, { token: owner })
+    ).body.status,
+    "Ongoing",
+  );
+  const decreasingOdometer = await request("/evidence", {
+    method: "POST",
+    token: renter,
+    body: JSON.stringify({
+      bookingId: booking.body.id,
+      phase: "checkout",
+      photos: [journeyEvidence.body.files[0].id],
+      fuel: 60,
+      odometer: 24000,
+      notes: "Invalid lower ODO",
+    }),
+  });
+  assert.equal(decreasingOdometer.status, 422);
   const checkout = await request("/evidence", {
     method: "POST",
     token: renter,
@@ -948,14 +1122,18 @@ try {
       phase: "checkout",
       photos: [journeyEvidence.body.files[0].id],
       fuel: 60,
-      odometer: 25000,
+      odometer: 25500,
       notes: "QA check-out evidence",
     }),
   });
   assert.equal(checkout.status, 200);
   assert.equal(checkout.body.fuelAfter, 60);
-  assert.equal(checkout.body.odometerAfter, 25000);
+  assert.equal(checkout.body.odometerAfter, 25500);
   assert.equal(checkout.body.status, "Complete");
+  assert.equal(checkout.body.returnCharges.includedKm, 750);
+  assert.equal(checkout.body.returnCharges.extraKm, 250);
+  assert.equal(checkout.body.returnCharges.extraMileageFee, 750000);
+  assert.equal(checkout.body.returnCharges.totalFee, 750000);
   const completedJourney = await request(
     `/bookings/${booking.body.id}/status`,
     {

@@ -149,7 +149,15 @@ try {
     return { quote, booking: response.body };
   };
   const completeBooking = async (id) => {
-    assert.equal((await send(`/bookings/${id}/status`, "PUT", owner, { status: "Accepted" })).status, 200);
+    assert.equal(
+      (
+        await send(`/bookings/${id}/status`, "PUT", owner, {
+          status: "Accepted",
+          ownerPolicyConfirmed: true,
+        })
+      ).status,
+      200,
+    );
     const payment = await send(`/bookings/${id}/payment`, "POST", renter);
     assert.equal(payment.status, 201);
     assert.equal(payment.body.paymentStatus, "Pending");
@@ -170,19 +178,64 @@ try {
     form.append("bookingId", String(id));
     const upload = await request("/uploads/evidence", { method: "POST", token: renter, body: form });
     assert.equal(upload.status, 201);
-    for (const phase of ["checkin", "checkout"])
-      assert.ok(
-        [200, 201].includes(
-          (await send("/evidence", "POST", renter, {
+    assert.ok(
+      [200, 201].includes(
+        (
+          await send("/evidence", "POST", renter, {
             bookingId: id,
-            phase,
+            phase: "checkin",
             photos: [upload.body.files[0].id],
             fuel: 70,
-            odometer: phase === "checkin" ? 1000 : 1200,
-            notes: "deals test",
-          })).status,
-        ),
-      );
+            odometer: 1000,
+            notes: "deals test check-in",
+          })
+        ).status,
+      ),
+    );
+    const ownerForm = new FormData();
+    ownerForm.append(
+      "files",
+      new Blob([Buffer.from("89504e470d0a1a0a", "hex")], {
+        type: "image/png",
+      }),
+      "owner-e.png",
+    );
+    ownerForm.append("bookingId", String(id));
+    const ownerUpload = await request("/uploads/evidence", {
+      method: "POST",
+      token: owner,
+      body: ownerForm,
+    });
+    assert.equal(ownerUpload.status, 201);
+    assert.equal(
+      (
+        await send("/evidence", "POST", owner, {
+          bookingId: id,
+          phase: "checkin",
+          photos: [ownerUpload.body.files[0].id],
+          fuel: 70,
+          odometer: 1000,
+          ownerHandoverConfirmed: true,
+          collateralType: "cash",
+          notes: "owner confirms handover",
+        })
+      ).status,
+      200,
+    );
+    assert.ok(
+      [200, 201].includes(
+        (
+          await send("/evidence", "POST", renter, {
+            bookingId: id,
+            phase: "checkout",
+            photos: [upload.body.files[0].id],
+            fuel: 70,
+            odometer: 1200,
+            notes: "deals test checkout",
+          })
+        ).status,
+      ),
+    );
     assert.equal((await send(`/bookings/${id}/status`, "PUT", owner, { status: "Completed" })).status, 200);
   };
   const stored = () => JSON.parse(fs.readFileSync(dbFile, "utf8"));
@@ -274,7 +327,15 @@ try {
   assert.equal(proposal.body.previous.totalPrice, q1.totalPrice);
   let current = (await request(`/bookings/${pickup.id}`, { token: renter })).body;
   assert.equal(current.totalPrice, q1.totalPrice, "unconfirmed proposal changes nothing");
-  assert.equal((await send(`/bookings/${pickup.id}/status`, "PUT", owner, { status: "Accepted" })).status, 200);
+  assert.equal(
+    (
+      await send(`/bookings/${pickup.id}/status`, "PUT", owner, {
+        status: "Accepted",
+        ownerPolicyConfirmed: true,
+      })
+    ).status,
+    200,
+  );
   assert.equal((await send(`/bookings/${pickup.id}/payment`, "POST", renter)).status, 409, "must confirm price first");
   const revisionId = proposal.body.id;
   assert.equal((await send(`${revisionPath}/${revisionId}`, "PUT", owner, { decision: "accept" })).status, 403);
@@ -313,7 +374,10 @@ try {
   assert.equal((await send(revisionPath, "POST", owner, { reason: "too late", otherFee: 1, otherFeeLabel: "x" })).status, 409, "no price change after deposit");
   // Contract signing is blocked while a proposal is pending.
   const pending = await bookingFor("2028-04-03", "2028-04-04");
-  await send(`/bookings/${pending.booking.id}/status`, "PUT", owner, { status: "Accepted" });
+  await send(`/bookings/${pending.booking.id}/status`, "PUT", owner, {
+    status: "Accepted",
+    ownerPolicyConfirmed: true,
+  });
   const pendingPayment = await send(`/bookings/${pending.booking.id}/payment`, "POST", renter);
   assert.equal(pendingPayment.status, 201);
   assert.equal(

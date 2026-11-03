@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Link,
+  Navigate,
   useLocation,
   useNavigate,
   useParams,
@@ -69,7 +70,7 @@ import {
 } from "./components/UI";
 import { useAuth } from "./auth/AuthContext";
 import SearchBar from "./components/SearchBar";
-import { HANDOVER_POLICY } from "./services/rentalPolicy";
+import { HANDOVER_POLICY, RENTAL_POLICY } from "./services/rentalPolicy";
 const Load = PageLoading;
 const localIsoDate = (offsetDays = 0) => {
   const value = new Date();
@@ -825,7 +826,7 @@ export function Cars() {
         <div
           aria-hidden="true"
           className="absolute inset-0 -z-10 bg-cover bg-center"
-          style={{ backgroundImage: "url(/images/search-hero.jpg)" }}
+          style={{ backgroundImage: "url(/images/home-hero.jpg)" }}
         />
         <div
           aria-hidden="true"
@@ -1113,11 +1114,21 @@ function LegacyCarDetail() {
       <div className="grid gap-4 md:grid-cols-4">
         <img
           src={c.imageUrl}
+          alt={`${c.name} - ảnh xe`}
+          onError={(event) => {
+            event.currentTarget.onerror = null;
+            event.currentTarget.src = "/images/home-hero.jpg";
+          }}
           className="h-[420px] w-full rounded-2xl object-cover md:col-span-3"
         />
         <div className="grid grid-rows-2 gap-4">
           <img
             src={c.imageUrl}
+            alt={`${c.name} - ảnh xe`}
+            onError={(event) => {
+              event.currentTarget.onerror = null;
+              event.currentTarget.src = "/images/home-hero.jpg";
+            }}
             className="h-full w-full rounded-2xl object-cover opacity-80"
           />
           <div className="grid place-items-center rounded-2xl bg-slate-900 text-white">
@@ -1180,9 +1191,10 @@ function LegacyCarDetail() {
             <h2 className="text-xl font-bold">Quy định thuê xe</h2>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               {[
-                "Giới hạn 300 km/ngày",
-                "Phí trả muộn: 120.000đ/giờ",
-                "CCCD & GPLX còn hiệu lực",
+                `${RENTAL_POLICY.dailyMileageAllowanceKm} km/ngày; vượt ${money(RENTAL_POLICY.extraMileageFeePerKm)}/km`,
+                `Cuối tuần trả trước ${RENTAL_POLICY.weekendReturnDeadline}; trễ ${money(RENTAL_POLICY.weekendLateFeePerHour)}/giờ`,
+                "Chủ xe xác minh CCCD/GPLX và VNeID trực tiếp trước khi nhận xe",
+                `Thuê từ ${RENTAL_POLICY.longRentalMinDays} ngày giảm ${RENTAL_POLICY.longRentalDiscountRate * 100}%`,
                 "Bảo hiểm không gồm lỗi cố ý",
               ].map((x) => (
                 <div className="rounded-xl bg-white p-4" key={x}>
@@ -1273,6 +1285,8 @@ export function CarDetail() {
     [endDate, setEndDate] = useState(params.get("endDate") || later),
     [endTime, setEndTime] = useState(params.get("endTime") || "20:00"),
     [pickupOption, setPickupOption] = useState("pickup"),
+    [deliveryAddress, setDeliveryAddress] = useState(""),
+    [deliveryDistanceKm, setDeliveryDistanceKm] = useState(""),
     [promo, setPromo] = useState(params.get("promoCode") || ""),
     [appliedPromo, setAppliedPromo] = useState(params.get("promoCode") || ""),
     [quote, setQuote] = useState(null),
@@ -1282,6 +1296,21 @@ export function CarDetail() {
   const [photo, setPhoto] = useState(0);
   const requestQuote = async (code = appliedPromo, preserveOnError = false) => {
     if (!car || car.demoOnly) return;
+    if (
+      pickupOption === "delivery" &&
+      (!deliveryAddress.trim() ||
+        !Number.isFinite(Number(deliveryDistanceKm)) ||
+        Number(deliveryDistanceKm) <= 0 ||
+        Number(deliveryDistanceKm) > 100000)
+    ) {
+      quoteRequest.current += 1;
+      setQuote(null);
+      setQuoteError(
+        "Nhập địa chỉ giao xe và quãng đường một chiều hợp lệ để tính phí",
+      );
+      setQuoting(false);
+      return;
+    }
     const start = new Date(`${startDate}T${startTime}:00`),
       end = new Date(`${endDate}T${endTime}:00`);
     const requestId = ++quoteRequest.current;
@@ -1316,8 +1345,16 @@ export function CarDetail() {
           endTime,
           driverOption,
           pickupOption,
-          pickupLocation: car.handoverPoint || car.location,
-          returnLocation: car.handoverPoint || car.location,
+          deliveryDistanceKm:
+            pickupOption === "delivery" ? Number(deliveryDistanceKm) : undefined,
+          pickupLocation:
+            pickupOption === "delivery"
+              ? deliveryAddress.trim()
+              : car.handoverPoint || car.location,
+          returnLocation:
+            pickupOption === "delivery"
+              ? deliveryAddress.trim()
+              : car.handoverPoint || car.location,
           destination: params.get("destination") || undefined,
           promoCode: code || undefined,
         }),
@@ -1341,7 +1378,17 @@ export function CarDetail() {
     return () => {
       quoteRequest.current += 1;
     };
-  }, [car?.id, car?.demoOnly, startDate, startTime, endDate, endTime, pickupOption]);
+  }, [
+    car?.id,
+    car?.demoOnly,
+    startDate,
+    startTime,
+    endDate,
+    endTime,
+    pickupOption,
+    deliveryAddress,
+    deliveryDistanceKm,
+  ]);
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!car) return <Load />;
   const photos = (car.photos?.length ? car.photos : [car.imageUrl]).filter(
@@ -1583,11 +1630,16 @@ export function CarDetail() {
               <h2 className={h2}>Quy định và phụ phí</h2>
               <div className="grid gap-2 sm:grid-cols-2">
                 {[
-                  `Giới hạn ${car.rules?.mileageLimit || 300} km/ngày`,
-                  `Trả muộn ${money(car.rules?.lateFeePerHour || 120000)}/giờ`,
+                  `${RENTAL_POLICY.dailyMileageAllowanceKm} km/ngày; vượt ${money(RENTAL_POLICY.extraMileageFeePerKm)}/km`,
+                  `Trả muộn ngày thường ${money(car.rules?.lateFeePerHour ?? 120000)}/giờ; cuối tuần sau ${RENTAL_POLICY.weekendReturnDeadline} ${money(RENTAL_POLICY.weekendLateFeePerHour)}/giờ`,
+                  `Thuê từ ${RENTAL_POLICY.longRentalMinDays} ngày giảm ${RENTAL_POLICY.longRentalDiscountRate * 100}%`,
+                  `Giao xe một chiều ${money(RENTAL_POLICY.deliveryFeePerKm)}/km`,
                   car.rules?.noSmoking ? "Không hút thuốc" : "Cho phép hút thuốc",
-                  `Cọc hoàn lại ${money(car.deposit)}`,
+                  `Cọc online hoàn lại ${money(car.deposit)}`,
+                  `Tài sản bảo đảm lúc nhận: ${money(RENTAL_POLICY.pickupCollateralCash)} tiền mặt hoặc xe máy`,
                   "Nhiên liệu: giao đầy – trả đầy, không gồm trong giá thuê",
+                  `Xe điện thiếu pin ${money(RENTAL_POLICY.batteryShortfallFeePerPercent)} mỗi điểm phần trăm`,
+                  "Kiểm tra VNeID, tiện ích/VETC/giấy tờ và video trực tiếp; không tải video lên website",
                   `Bàn giao ${HANDOVER_POLICY.supportedFrom}–${HANDOVER_POLICY.supportedUntil}`,
                 ].map((item) => (
                   <div
@@ -1735,6 +1787,42 @@ export function CarDetail() {
                   </button>
                 ))}
               </div>
+              {pickupOption === "delivery" && (
+                <div className="grid gap-3">
+                  <label className="text-xs font-semibold text-pace-ink">
+                    Địa chỉ giao xe
+                    <input
+                      type="text"
+                      maxLength={160}
+                      className={`${fieldInput} mt-1`}
+                      value={deliveryAddress}
+                      onChange={(event) =>
+                        setDeliveryAddress(event.target.value)
+                      }
+                      placeholder="Nhập địa chỉ nhận xe"
+                    />
+                  </label>
+                  <label className="text-xs font-semibold text-pace-ink">
+                    Quãng đường giao một chiều từ điểm bàn giao (km)
+                    <input
+                      type="number"
+                      min="0.1"
+                      max="100000"
+                      step="0.1"
+                      className={`${fieldInput} mt-1`}
+                      value={deliveryDistanceKm}
+                      onChange={(event) =>
+                        setDeliveryDistanceKm(event.target.value)
+                      }
+                      placeholder="Chủ xe sẽ xác nhận trước khi nhận booking"
+                    />
+                  </label>
+                  <p className="text-[11px] leading-4 text-pace-muted">
+                    Phí giao một chiều {money(RENTAL_POLICY.deliveryFeePerKm)}
+                    /km; chủ xe sẽ xác nhận quãng đường trước khi chấp nhận.
+                  </p>
+                </div>
+              )}
               <div className="flex gap-1.5">
                 <input
                   aria-label="Mã ưu đãi"
@@ -1792,7 +1880,10 @@ export function CarDetail() {
                     />
                   )}
                   {quote.deliveryFee > 0 && (
-                    <QuoteRow label="Giao nhận xe" value={quote.deliveryFee} />
+                    <QuoteRow
+                      label={`Giao một chiều · ${quote.deliveryDistanceKm} km × ${money(quote.deliveryFeePerKm)}`}
+                      value={quote.deliveryFee}
+                    />
                   )}
                   {quote.promoDiscount > 0 && (
                     <QuoteRow
@@ -1810,6 +1901,17 @@ export function CarDetail() {
                   <div className="flex justify-between gap-3 text-[11px] leading-4 text-pace-muted">
                     <span>Tiền cọc hoàn lại · chưa thanh toán ở bước này</span>
                     <b className="shrink-0">{money(quote.deposit)}</b>
+                  </div>
+                  <div className="mt-2 border-t border-pace-line pt-2 text-[11px] leading-4 text-pace-muted">
+                    {quote.dailyMileageAllowanceKm} km/ngày; vượt mức{" "}
+                    {money(quote.extraMileageFeePerKm)}/km. Thuê từ{" "}
+                    {RENTAL_POLICY.longRentalMinDays} ngày giảm{" "}
+                    {RENTAL_POLICY.longRentalDiscountRate * 100}%. Cuối tuần
+                    trả trước {RENTAL_POLICY.weekendReturnDeadline}, trễ{" "}
+                    {money(RENTAL_POLICY.weekendLateFeePerHour)}/giờ; qua 00:00
+                    tính thêm ngày. Xe điện thiếu pin{" "}
+                    {money(RENTAL_POLICY.batteryShortfallFeePerPercent)} mỗi
+                    điểm phần trăm.
                   </div>
                 </div>
               )}
@@ -2841,7 +2943,12 @@ function LegacyBooking() {
         <aside>
           <div className="card sticky top-24 p-6">
             <img
-              src={c.imageUrl}
+              src={c.imageUrl || c.photos?.[0] || "/images/home-hero.jpg"}
+              alt={c.name}
+              onError={(event) => {
+                event.currentTarget.onerror = null;
+                event.currentTarget.src = "/images/home-hero.jpg";
+              }}
               className="mb-4 h-36 w-full rounded-xl object-cover"
             />
             <h3 className="font-bold">{c.name}</h3>
@@ -3577,14 +3684,17 @@ function Signature({ name, signed, signedAt }) {
 }
 export function Evidence() {
   const { bookingId } = useParams(),
-    toast = useToast();
+    toast = useToast(),
+    { user } = useAuth();
   const evidenceFetch = useFetch("/evidence/" + bookingId),
     bookingFetch = useFetch("/bookings/" + bookingId);
   const [drafts, setDrafts] = useState({
       checkin: { fuel: "", odometer: "", notes: "", files: [] },
       checkout: { fuel: "", odometer: "", notes: "", files: [] },
     }),
-    [saving, setSaving] = useState("");
+    [saving, setSaving] = useState(""),
+    [handoverConfirmed, setHandoverConfirmed] = useState(false),
+    [collateralType, setCollateralType] = useState("cash");
   const evidence = evidenceFetch.data,
     booking = bookingFetch.data;
   useEffect(() => {
@@ -3623,6 +3733,8 @@ export function Evidence() {
       ),
       checkout: ["Ongoing", "Check-out Review"].includes(booking.status),
     },
+    isCurrentPolicy =
+      booking.pricingSnapshot?.policyVersion === RENTAL_POLICY.version,
     stages = [
       {
         key: "checkin",
@@ -3639,6 +3751,15 @@ export function Evidence() {
     const draft = drafts[stage.key];
     if (!draft.files.length) {
       toast("Mỗi lần lưu biên bản cần chọn ít nhất một ảnh mới");
+      return;
+    }
+    if (
+      stage.key === "checkin" &&
+      isCurrentPolicy &&
+      user?.role === "owner" &&
+      !handoverConfirmed
+    ) {
+      toast("Chủ xe cần xác nhận checklist bàn giao trước khi lưu");
       return;
     }
     if (
@@ -3673,9 +3794,24 @@ export function Evidence() {
           fuel: Number(draft.fuel),
           odometer: Number(draft.odometer),
           notes: draft.notes.trim(),
+          ownerHandoverConfirmed:
+            stage.key === "checkin" &&
+            user?.role === "owner" &&
+            handoverConfirmed,
+          collateralType:
+            stage.key === "checkin" && user?.role === "owner"
+              ? collateralType
+              : undefined,
         }),
       });
-      toast(`Đã lưu biên bản ${stage.key === "checkin" ? "nhận" : "trả"} xe`);
+      toast(
+        stage.key === "checkin" &&
+          isCurrentPolicy &&
+          user?.role !== "owner" &&
+          !evidence?.ownerHandoverConfirmation
+          ? "Đã lưu biên bản nhận xe; chuyến chỉ bắt đầu sau khi chủ xe xác nhận trực tiếp"
+          : `Đã lưu biên bản ${stage.key === "checkin" ? "nhận" : "trả"} xe`,
+      );
       setDrafts((current) => ({
         ...current,
         [stage.key]: { ...current[stage.key], files: [] },
@@ -3730,6 +3866,61 @@ export function Evidence() {
                   Chưa có ảnh được lưu cho giai đoạn này.
                 </div>
               )}
+              {stage.key === "checkin" &&
+                isCurrentPolicy &&
+                !evidence?.ownerHandoverConfirmation && (
+                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                    <p>
+                      Trước khi bắt đầu chuyến, chủ xe xác minh trực tiếp
+                      CCCD/GPLX và kiểm tra VNeID. Website không lưu tài liệu
+                      định danh hoặc video; hai bên quay và đối chiếu video
+                      trực tiếp.
+                    </p>
+                    {user?.role === "owner" && editable.checkin && (
+                      <>
+                        <label className="mt-3 block">
+                          <span className="font-semibold">
+                            Tài sản bảo đảm tại lúc nhận xe
+                          </span>
+                          <select
+                            className="input mt-1"
+                            value={collateralType}
+                            onChange={(event) =>
+                              setCollateralType(event.target.value)
+                            }
+                          >
+                            <option value="cash">
+                              Tiền mặt ·{" "}
+                              {money(RENTAL_POLICY.pickupCollateralCash)}
+                            </option>
+                            <option value="motorcycle">Xe máy</option>
+                          </select>
+                        </label>
+                        <label className="mt-3 flex items-start gap-2">
+                          <input
+                            type="checkbox"
+                            checked={handoverConfirmed}
+                            onChange={(event) =>
+                              setHandoverConfirmed(event.target.checked)
+                            }
+                          />
+                          <span>
+                            Tôi xác nhận đã đối chiếu CCCD/GPLX và VNeID, nhận
+                            tài sản bảo đảm, kiểm tra tiện ích/VETC/giấy tờ, vệ
+                            sinh và kiểm tra xe; hai bên quay, đối chiếu video
+                            trực tiếp.
+                          </span>
+                        </label>
+                      </>
+                    )}
+                    {user?.role !== "owner" && (
+                      <p className="mt-2 font-semibold">
+                        Chủ xe cần xác minh trực tiếp CCCD/GPLX, VNeID và hoàn
+                        tất checklist bàn giao để bắt đầu chuyến.
+                      </p>
+                    )}
+                  </div>
+                )}
               {editable[stage.key] && (
                 <label className="mt-4 block rounded-xl border border-dashed border-brand-300 bg-brand-50 p-4 text-sm text-brand-700">
                   <b>Chọn ảnh giao nhận</b>
@@ -3762,7 +3953,13 @@ export function Evidence() {
                 </label>
               )}
               <div className="mt-5 grid grid-cols-2 gap-3">
-                <Field label="Mức nhiên liệu (%)">
+                <Field
+                  label={
+                    booking.car?.fuel === "Điện"
+                      ? "Mức pin (%)"
+                      : "Mức nhiên liệu (%)"
+                  }
+                >
                   <input
                     type="number"
                     min="0"
@@ -3825,6 +4022,43 @@ export function Evidence() {
                 >
                   {saving === stage.key ? "Đang lưu..." : "Lưu biên bản"}
                 </Button>
+              )}
+              {stage.key === "checkout" && evidence?.returnCharges && (
+                <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+                  <b>
+                    Phí đối soát dự kiến:{" "}
+                    {money(evidence.returnCharges.totalFee)}
+                  </b>
+                  <ul className="mt-2 space-y-1">
+                    <li>
+                      Quãng đường: {evidence.returnCharges.drivenKm} km · gồm{" "}
+                      {evidence.returnCharges.includedKm} km · vượt{" "}
+                      {evidence.returnCharges.extraKm} km:{" "}
+                      {money(evidence.returnCharges.extraMileageFee)}
+                    </li>
+                    {booking.car?.fuel === "Điện" && (
+                      <li>
+                        Pin thiếu {evidence.returnCharges.batteryShortfallPercent}%
+                        : {money(evidence.returnCharges.batteryFee)}
+                      </li>
+                    )}
+                    <li>
+                      Trả muộn {evidence.returnCharges.lateHours} giờ:{" "}
+                      {money(evidence.returnCharges.lateFee)}
+                    </li>
+                    {evidence.returnCharges.additionalRentalDays > 0 && (
+                      <li>
+                        Thêm {evidence.returnCharges.additionalRentalDays} ngày:
+                        {" "}
+                        {money(evidence.returnCharges.extraDayFee)}
+                      </li>
+                    )}
+                  </ul>
+                  <p className="mt-2 text-xs">
+                    Đây là khoản đối soát giữa hai bên, không tự động trừ từ
+                    khoản cọc hoặc thanh toán trên website.
+                  </p>
+                </div>
               )}
             </section>
           );
@@ -4384,7 +4618,7 @@ export function Booking() {
   const { carId } = useParams();
   const [params] = useSearchParams();
   const quoteId = params.get("quoteId");
-  if (!quoteId) return <LegacyBookingV2 />;
+  if (!quoteId) return <Navigate to={`/cars/${carId}`} replace />;
   return <BookingQuoteFlow carId={carId} quoteId={quoteId} />;
 }
 

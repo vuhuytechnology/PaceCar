@@ -8,8 +8,11 @@ export function PriceConditions({ quote }) {
   const c = quote?.conditions;
   if (!c) return null;
   const rows = [
-    ["Giới hạn kilomet", c.mileageLimitKm ? `${c.mileageLimitKm} km/ngày` : NOT_PUBLISHED],
-    ["Phí trả xe muộn", c.lateFeePerHour != null ? `${money(c.lateFeePerHour)}/giờ` : NOT_PUBLISHED],
+    ["Quãng đường", `${c.mileageLimitKm} km/ngày; vượt ${money(c.extraMileageFeePerKm)}/km`],
+    ["Giao xe", `${money(c.deliveryFeePerKm)}/km một chiều`],
+    ["Trả muộn ngày thường", c.lateFeePerHour != null ? `${money(c.lateFeePerHour)}/giờ` : NOT_PUBLISHED],
+    ["Trả muộn cuối tuần", `Trước ${c.weekendReturnDeadline}; sau giờ này ${money(c.weekendLateFeePerHour)}/giờ, qua 00:00 tính thêm ngày`],
+    ["Pin xe điện", `Thiếu pin tính ${money(c.batteryShortfallFeePerPercent)} mỗi điểm phần trăm`],
     ["Nhiên liệu", c.fuelPolicy],
     ["Chính sách hủy / đổi lịch", c.cancellationPolicy || NOT_PUBLISHED],
     ["Hoàn cọc / khấu trừ", c.depositRefundTerms || NOT_PUBLISHED],
@@ -17,7 +20,7 @@ export function PriceConditions({ quote }) {
   ];
   return (
     <section className="card p-6">
-      <h2 className="text-xl font-bold">Điều kiện thuê do chủ xe công bố</h2>
+      <h2 className="text-xl font-bold">Điều kiện thuê áp dụng</h2>
       <dl className="mt-4 divide-y text-sm">
         {rows.map(([label, value]) => (
           <div className="flex flex-col gap-1 py-3 sm:flex-row sm:gap-6" key={label}>
@@ -27,7 +30,7 @@ export function PriceConditions({ quote }) {
         ))}
       </dl>
       <p className="mt-3 text-xs leading-5 text-slate-500">
-        Giá cuối cùng do bên cho thuê xác nhận trước khi giao kết hợp đồng. Tiền
+        Quãng đường giao xe do chủ xe xác nhận trước khi nhận booking. Tiền
         cọc{quote.deposit != null ? ` (${money(quote.deposit)})` : ""} được tách
         riêng, không nằm trong tổng phí thuê.
       </p>

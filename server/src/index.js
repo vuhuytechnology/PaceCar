@@ -8,7 +8,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import { flushWrites, initializeStore, read, write } from "./data/store.js";
-import { TERMS_STATUS, TERMS_VERSION } from "./policy.js";
+import {
+  RENTAL_POLICY_VERSION,
+  TERMS_STATUS,
+  TERMS_VERSION,
+} from "./policy.js";
 import { hasPendingPriceRevision, registerDealRoutes } from "./dealRoutes.js";
 import { emailVerificationEnabled, sendMail } from "./mailer.js";
 const app = express();
@@ -500,18 +504,23 @@ const listingErrors = (car, requireDocuments = false) => {
     )
       errors.push("Phí trả muộn không hợp lệ");
   }
+  if (
+    car.rentalPolicyVersion != null &&
+    car.rentalPolicyVersion !== "" &&
+    car.rentalPolicyVersion !== RENTAL_POLICY_VERSION
+  )
+    errors.push("Phiên bản chính sách thuê xe không hợp lệ");
+  if (
+    car.instantBooking &&
+    car.rentalPolicyVersion !== RENTAL_POLICY_VERSION
+  )
+    errors.push("Đặt xe nhanh cần xác nhận chính sách thuê xe hiện hành");
   const delivery = car.deliveryOptions;
   if (
     delivery != null &&
     (typeof delivery !== "object" || Array.isArray(delivery))
   )
     errors.push("Tùy chọn giao xe không hợp lệ");
-  else if (
-    delivery?.ownerDelivery &&
-    (!Number.isFinite(Number(delivery.deliveryFee)) ||
-      Number(delivery.deliveryFee) < 0)
-  )
-    errors.push("Phí giao xe không hợp lệ");
   return errors;
 };
 const listingFieldNames = [
@@ -539,6 +548,7 @@ const listingFieldNames = [
   "rules",
   "deliveryOptions",
   "instantBooking",
+  "rentalPolicyVersion",
   "cancellationPolicy",
   "depositRefundTerms",
 ];
@@ -670,6 +680,24 @@ const localCalendarDay = (timestamp, offsetDays = 0) => {
   const [year, month, day] = datePart.split("-").map(Number);
   return new Date(Date.UTC(year, month - 1, day + offsetDays)).getUTCDay();
 };
+const localDateKey = (timestamp) => {
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+};
+const calendarDayDifference = (from, to) => {
+  if (!from || !to) return 0;
+  const parse = (value) => {
+    const [year, month, day] = value.split("-").map(Number);
+    return Date.UTC(year, month - 1, day);
+  };
+  return Math.max(0, Math.round((parse(to) - parse(from)) / 86400000));
+};
 const carAvailable = (data, carId, startDate, endDate) =>
   !data.bookings.some(
     (booking) =>
@@ -714,7 +742,9 @@ const buildQuote = (data, car, input) => {
     insuranceFee = days * policy.insurancePerDay;
   const deliveryFee =
     input.pickupOption === "delivery"
-      ? Number(car.deliveryOptions?.deliveryFee ?? 150000)
+      ? Math.round(
+          Number(policy.deliveryFeePerKm) * Number(input.deliveryDistanceKm),
+        )
       : 0;
   const outsideHoursCount = [input.startDate, input.endDate].filter(
       (timestamp) => outsideStandardHandover(timestamp, policy),
@@ -769,6 +799,23 @@ const buildQuote = (data, car, input) => {
     platformFee,
     insuranceFee,
     deliveryFee,
+    deliveryDistanceKm:
+      input.pickupOption === "delivery" ? Number(input.deliveryDistanceKm) : 0,
+    deliveryFeePerKm: Number(policy.deliveryFeePerKm),
+    dailyMileageAllowanceKm: Number(policy.dailyMileageAllowanceKm),
+    extraMileageFeePerKm: Number(policy.extraMileageFeePerKm),
+    batteryShortfallFeePerPercent: Number(
+      policy.batteryShortfallFeePerPercent,
+    ),
+    weekdayLateFeePerHour: Number(car.rules?.lateFeePerHour || 0),
+    weekendReturnDeadline: policy.weekendReturnDeadline,
+    weekendLateFeePerHour: Number(policy.weekendLateFeePerHour),
+    weekendAfterMidnightExtraDays: Number(
+      policy.weekendAfterMidnightExtraDays,
+    ),
+    weekendPolicyDays: [...policy.weekendDays],
+    pickupCollateralCash: Number(policy.pickupCollateralCash),
+    vehicleFuelType: car.fuel,
     outsideHoursCount,
     outsideHoursFee,
     promoDiscount,
@@ -787,8 +834,15 @@ const buildQuote = (data, car, input) => {
 };
 // Conditions come only from the listing; missing values stay null so the UI
 // says "chưa công bố" instead of inventing terms.
-const quoteConditions = (car) => ({
-  mileageLimitKm: car.rules?.mileageLimit ?? null,
+const quoteConditions = (car, policy) => ({
+  mileageLimitKm: Number(policy.dailyMileageAllowanceKm),
+  extraMileageFeePerKm: Number(policy.extraMileageFeePerKm),
+  deliveryFeePerKm: Number(policy.deliveryFeePerKm),
+  weekendReturnDeadline: policy.weekendReturnDeadline,
+  weekendLateFeePerHour: Number(policy.weekendLateFeePerHour),
+  batteryShortfallFeePerPercent: Number(
+    policy.batteryShortfallFeePerPercent,
+  ),
   lateFeePerHour: car.rules?.lateFeePerHour ?? null,
   fuelPolicy: "Giao đầy – trả đầy; nhiên liệu không nằm trong giá thuê",
   cancellationPolicy: car.cancellationPolicy || null,
@@ -809,9 +863,13 @@ const bookingTransitions = {
 };
 const contractTermsFor = (booking, car) =>
   [
-    "Điều khoản điện tử PaceCar phiên bản PC-TERMS-2026.1.",
+    `Điều khoản điện tử PaceCar phiên bản ${TERMS_VERSION}.`,
     `Xe ${car?.name || `#${booking.carId}`} được thuê từ ${booking.startDate} đến ${booking.endDate}.`,
     "Người thuê sử dụng xe đúng mục đích, hai bên ghi nhận giao nhận bằng bằng chứng trên PaceCar và tuân thủ quy trình xử lý sự cố, bồi thường.",
+    `Mức sử dụng gồm ${booking.pricingSnapshot?.dailyMileageAllowanceKm ?? 250} km/ngày; vượt mức tính ${Number(booking.pricingSnapshot?.extraMileageFeePerKm ?? 3000).toLocaleString("vi-VN")}đ/km. Từ 5 ngày áp dụng giảm 5%.`,
+    `Giao xe tính một chiều ${Number(booking.pricingSnapshot?.deliveryFeePerKm ?? 10000).toLocaleString("vi-VN")}đ/km; quãng đường được chủ xe xác nhận trước khi chấp nhận booking.`,
+    `Cuối tuần trả xe trước ${booking.pricingSnapshot?.weekendReturnDeadline ?? "21:00"}; trễ tính ${Number(booking.pricingSnapshot?.weekendLateFeePerHour ?? 50000).toLocaleString("vi-VN")}đ/giờ, qua 00:00 tính thêm ngày. Xe điện thiếu pin tính ${Number(booking.pricingSnapshot?.batteryShortfallFeePerPercent ?? 2000).toLocaleString("vi-VN")}đ cho mỗi điểm phần trăm.`,
+    `Tại lúc nhận xe, người thuê cung cấp ${Number(booking.pricingSnapshot?.pickupCollateralCash ?? 15000000).toLocaleString("vi-VN")}đ tiền mặt hoặc xe máy làm tài sản bảo đảm riêng với khoản cọc online hoàn lại. Chủ xe đối chiếu CCCD/GPLX và VNeID trực tiếp, kiểm tra xe/giấy tờ/tiện ích, đồng thời hai bên quay và đối chiếu video trực tiếp; video không được tải lên website.`,
   ].join(" ");
 const contractView = (data, contract, booking) => ({
   ...contract,
@@ -855,6 +913,91 @@ const evidencePhaseComplete = (evidence, phase) => {
     Number.isFinite(Number(fuel)) &&
     Number.isFinite(Number(odometer))
   );
+};
+const calculateReturnCharges = (data, booking, evidence, returnedAt) => {
+  const car = find(data.cars, booking.carId),
+    policy = data.pricingPolicy,
+    snapshot = booking.pricingSnapshot || {},
+    startOdometer = Number(evidence.odometerBefore),
+    endOdometer = Number(evidence.odometerAfter),
+    drivenKm = endOdometer - startOdometer,
+    bookedDays = rentalDays(booking.startDate, booking.endDate),
+    endDateKey = localDateKey(booking.endDate),
+    returnDateKey = localDateKey(returnedAt),
+    scheduledEnd = new Date(booking.endDate),
+    actualReturn = new Date(returnedAt),
+    weekendReturn = (
+      snapshot.weekendPolicyDays || policy.weekendDays
+    ).includes(
+      localCalendarDay(booking.endDate),
+    ),
+    pastMidnight = returnDateKey > endDateKey,
+    lateMs = Math.max(0, actualReturn.getTime() - scheduledEnd.getTime());
+  const midnightAfterEnd = new Date(`${endDateKey}T00:00:00+07:00`);
+  midnightAfterEnd.setDate(midnightAfterEnd.getDate() + 1);
+  const hourlyLateMs =
+      weekendReturn && pastMidnight
+        ? Math.max(
+            0,
+            midnightAfterEnd.getTime() - scheduledEnd.getTime(),
+          )
+        : lateMs,
+    lateRate = weekendReturn
+      ? Number(
+          snapshot.weekendLateFeePerHour ?? policy.weekendLateFeePerHour,
+        )
+      : Number(
+          snapshot.weekdayLateFeePerHour ?? car.rules?.lateFeePerHour ?? 0,
+        ),
+    lateHours = lateMs > 0 && lateRate > 0 ? Math.ceil(hourlyLateMs / 3600000) : 0,
+    lateDays =
+      weekendReturn && pastMidnight
+        ? Math.max(
+            Number(
+              snapshot.weekendAfterMidnightExtraDays ??
+                policy.weekendAfterMidnightExtraDays,
+            ),
+            calendarDayDifference(endDateKey, returnDateKey),
+          )
+        : 0,
+    includedKm =
+      (bookedDays + lateDays) *
+        Number(snapshot.dailyMileageAllowanceKm ?? policy.dailyMileageAllowanceKm),
+    extraKm = Math.max(0, drivenKm - includedKm),
+    extraMileageFee = Math.ceil(
+      extraKm *
+        Number(snapshot.extraMileageFeePerKm ?? policy.extraMileageFeePerKm),
+    ),
+    batteryShortfallPercent =
+      (snapshot.vehicleFuelType ?? car.fuel) === "Điện"
+        ? Math.max(0, Number(evidence.fuelBefore) - Number(evidence.fuelAfter))
+        : 0,
+    batteryFee = Math.ceil(
+      batteryShortfallPercent *
+        Number(
+          snapshot.batteryShortfallFeePerPercent ??
+            policy.batteryShortfallFeePerPercent,
+        ),
+    ),
+    lateFee = lateHours * lateRate,
+    extraDayFee =
+      lateDays * Number(snapshot.pricePerDay ?? car.pricePerDay);
+  return {
+    returnedAt,
+    drivenKm,
+    includedKm,
+    extraKm,
+    extraMileageFee,
+    batteryShortfallPercent,
+    batteryFee,
+    lateHours,
+    lateRatePerHour: lateRate,
+    lateFee,
+    additionalRentalDays: lateDays,
+    extraDayFee,
+    totalFee: extraMileageFee + batteryFee + lateFee + extraDayFee,
+    currency: "VND",
+  };
 };
 app.post("/api/analytics/page-view", pageViewLimiter, (q, s) => {
   const data = read();
@@ -1731,17 +1874,37 @@ app.post("/api/quotes", quoteLimiter, (req, res) => {
   )
     return res.status(400).json({ message: "Điểm đến dự kiến không hợp lệ" });
   if (
+    pickupOption === "delivery" &&
+    (typeof req.body.pickupLocation !== "string" ||
+      !req.body.pickupLocation.trim())
+  )
+    return res.status(400).json({ message: "Vui lòng nhập địa chỉ giao xe" });
+  if (
     req.body.promoCode !== undefined &&
     req.body.promoCode !== null &&
     (typeof req.body.promoCode !== "string" ||
       req.body.promoCode.trim().length > 40)
   )
     return res.status(400).json({ message: "Mã ưu đãi không hợp lệ" });
+  let deliveryDistanceKm = 0;
+  if (pickupOption === "delivery") {
+    deliveryDistanceKm = Number(req.body.deliveryDistanceKm);
+    if (
+      req.body.deliveryDistanceKm === "" ||
+      !Number.isFinite(deliveryDistanceKm) ||
+      deliveryDistanceKm <= 0 ||
+      deliveryDistanceKm > 100000
+    )
+      return res.status(400).json({
+        message: "Quãng đường giao xe một chiều phải lớn hơn 0 km",
+      });
+  }
   const quoteInput = {
     startDate: rentalDateTime(req.body.startDate, req.body.startTime),
     endDate: rentalDateTime(req.body.endDate, req.body.endTime),
     driverOption,
     pickupOption,
+    deliveryDistanceKm,
     pickupLocation:
       String(req.body.pickupLocation || "").trim() || car.location,
     returnLocation:
@@ -1762,6 +1925,16 @@ app.post("/api/quotes", quoteLimiter, (req, res) => {
   )
     return res.status(422).json({
       message: `PaceCar hỗ trợ bàn giao từ ${data.pricingPolicy.handoverSupportedFrom} đến ${data.pricingPolicy.handoverSupportedUntil}`,
+    });
+  if (
+    data.pricingPolicy.weekendDays.includes(
+      localCalendarDay(quoteInput.endDate),
+    ) &&
+    timeMinutes(quoteInput.endDate) >
+      policyTimeMinutes(data.pricingPolicy.weekendReturnDeadline)
+  )
+    return res.status(422).json({
+      message: `Cuối tuần cần trả xe trước ${data.pricingPolicy.weekendReturnDeadline}`,
     });
   if (isPastDate(quoteInput.startDate))
     return res
@@ -1793,6 +1966,7 @@ app.post("/api/quotes", quoteLimiter, (req, res) => {
         endDate: quoteInput.endDate,
         driverOption: quoteInput.driverOption,
         pickupOption: quoteInput.pickupOption,
+        deliveryDistanceKm: quoteInput.deliveryDistanceKm,
         pickupLocation: quoteInput.pickupLocation,
         returnLocation: quoteInput.returnLocation,
         destination: quoteInput.destination,
@@ -1813,7 +1987,7 @@ app.post("/api/quotes", quoteLimiter, (req, res) => {
       expiresAt: quote.expiresAt,
       car: publicCar(car),
       termsVersion: TERMS_VERSION,
-      conditions: quoteConditions(car),
+      conditions: quoteConditions(car, data.pricingPolicy),
       ...breakdown,
     });
   } catch (error) {
@@ -1843,7 +2017,7 @@ app.get("/api/quotes/:id", (req, res) => {
     returnLocation: quote.returnLocation,
     destination: quote.destination || null,
     termsVersion: TERMS_VERSION,
-    conditions: quoteConditions(car),
+    conditions: quoteConditions(car, data.pricingPolicy),
     ...quote.breakdown,
   });
 });
@@ -2498,12 +2672,17 @@ app.post("/api/bookings", bookingLimiter, requireRole(["renter"]), (q, s) => {
     endDate: quote.endDate,
     pickupLocation: quote.pickupLocation,
     returnLocation: quote.returnLocation,
+    deliveryDistanceKm: Number(quote.deliveryDistanceKm || 0),
     destination: quote.destination || null,
     pickupOption: quote.pickupOption,
     driverOption: quote.driverOption,
     notes: String(q.body.notes || "").slice(0, 1000),
     status:
-      car.instantBooking && renter.verified && renter.riskLevel === "Low"
+      car.instantBooking &&
+      car.rentalPolicyVersion === RENTAL_POLICY_VERSION &&
+      quote.pickupOption !== "delivery" &&
+      renter.verified &&
+      renter.riskLevel === "Low"
         ? "Accepted"
         : "Pending",
     totalPrice: quote.breakdown.totalPrice,
@@ -2522,6 +2701,18 @@ app.post("/api/bookings", bookingLimiter, requireRole(["renter"]), (q, s) => {
       roleAcknowledged: true,
       acceptedAt: new Date().toISOString(),
     },
+    ownerPolicyAcknowledgement:
+      car.instantBooking &&
+      car.rentalPolicyVersion === RENTAL_POLICY_VERSION &&
+      quote.pickupOption !== "delivery" &&
+      renter.verified &&
+      renter.riskLevel === "Low"
+        ? {
+            policyVersion: RENTAL_POLICY_VERSION,
+            acknowledgedAt: new Date().toISOString(),
+            source: "instant_booking_listing",
+          }
+        : null,
     idempotencyKey: idempotencyKey || null,
     createdAt: new Date().toISOString(),
   };
@@ -2889,6 +3080,55 @@ app.put(
         });
     }
     const evidence = d.evidence.find((item) => item.bookingId === b.id);
+    let ownerPolicyAcknowledgement = null;
+    if (
+      q.body.status === "Accepted" &&
+      b.pricingSnapshot?.policyVersion === RENTAL_POLICY_VERSION &&
+      !b.ownerPolicyAcknowledgement &&
+      actor.role !== "owner"
+    )
+      return s.status(409).json({
+        message: "Chỉ chủ xe mới có thể xác nhận chính sách trước khi nhận booking",
+      });
+    if (
+      q.body.status === "Accepted" &&
+      actor.role === "owner" &&
+      b.pricingSnapshot?.policyVersion === RENTAL_POLICY_VERSION &&
+      !b.ownerPolicyAcknowledgement
+    ) {
+      if (q.body.ownerPolicyConfirmed !== true)
+        return s.status(422).json({
+          message: "Chủ xe cần xác nhận chính sách thuê hiện hành trước khi nhận booking",
+        });
+      if (
+        b.pickupOption === "delivery" &&
+        Number(q.body.confirmedDeliveryDistanceKm) !==
+          Number(b.deliveryDistanceKm)
+      )
+        return s.status(422).json({
+          message: "Chủ xe cần xác nhận đúng quãng đường giao xe một chiều",
+        });
+      ownerPolicyAcknowledgement = {
+        policyVersion: RENTAL_POLICY_VERSION,
+        acknowledgedAt: new Date().toISOString(),
+        deliveryDistanceKm:
+          b.pickupOption === "delivery" ? Number(b.deliveryDistanceKm) : null,
+        source: "booking_acceptance",
+      };
+    }
+    if (
+      q.body.status === "Ongoing" &&
+      b.pricingSnapshot?.policyVersion === RENTAL_POLICY_VERSION
+    ) {
+      if (
+        !evidence?.ownerHandoverConfirmation?.identityAndLicenseVerified ||
+        !evidence?.ownerHandoverConfirmation?.vneidVerified
+      )
+        return s.status(422).json({
+          message:
+            "Chủ xe cần xác nhận đã đối chiếu CCCD/GPLX và VNeID trực tiếp trước khi bắt đầu chuyến",
+        });
+    }
     if (
       q.body.status === "Ongoing" &&
       !evidencePhaseComplete(evidence, "checkin")
@@ -2920,6 +3160,8 @@ app.put(
       });
     const previous = b.status;
     b.status = q.body.status;
+    if (ownerPolicyAcknowledgement)
+      b.ownerPolicyAcknowledgement = ownerPolicyAcknowledgement;
     d.auditLogs.push({
       id: nextId(d.auditLogs),
       entity: "booking",
@@ -3193,6 +3435,28 @@ app.post("/api/evidence", requireRole(["renter", "owner", "admin"]), (q, s) => {
   const fuel = Number(q.body.fuel),
     odometer = Number(q.body.odometer),
     notes = String(q.body.notes || "").trim();
+  let evidence = d.evidence.find((item) => item.bookingId === booking.id);
+  const isCurrentPolicy =
+    booking.pricingSnapshot?.policyVersion === RENTAL_POLICY_VERSION;
+  if (
+    phase === "checkout" &&
+    isCurrentPolicy &&
+    !evidencePhaseComplete(evidence, "checkin")
+  )
+    return s.status(409).json({
+      message: "Cần hoàn tất biên bản check-in trước khi đối soát trả xe",
+    });
+  if (phase === "checkin" && isCurrentPolicy) {
+    if (
+      q.authUser.role === "owner" &&
+      (q.body.ownerHandoverConfirmed !== true ||
+        !["cash", "motorcycle"].includes(q.body.collateralType))
+    )
+      return s.status(422).json({
+        message:
+          "Chủ xe cần xác nhận checklist bàn giao và hình thức tài sản bảo đảm",
+      });
+  }
   if (
     q.body.fuel === null ||
     q.body.fuel === "" ||
@@ -3209,9 +3473,16 @@ app.post("/api/evidence", requireRole(["renter", "owner", "admin"]), (q, s) => {
     odometer > 10000000
   )
     return s.status(400).json({ message: "Số ODO không hợp lệ" });
+  if (
+    phase === "checkout" &&
+    evidence?.odometerBefore != null &&
+    odometer < Number(evidence.odometerBefore)
+  )
+    return s.status(422).json({
+      message: "ODO khi trả xe không thể thấp hơn ODO lúc nhận xe",
+    });
   if (notes.length > 2000)
     return s.status(400).json({ message: "Ghi chú tối đa 2.000 ký tự" });
-  let evidence = d.evidence.find((item) => item.bookingId === booking.id);
   const created = !evidence;
   if (!evidence) {
     evidence = {
@@ -3255,6 +3526,30 @@ app.post("/api/evidence", requireRole(["renter", "owner", "admin"]), (q, s) => {
     createdAt: now,
   };
   evidence.submissions.push(submission);
+  if (
+    phase === "checkin" &&
+    isCurrentPolicy &&
+    q.authUser.role === "owner" &&
+    q.body.ownerHandoverConfirmed === true
+  )
+    evidence.ownerHandoverConfirmation = {
+      confirmedBy: q.authUser.id,
+      confirmedAt: now,
+      collateralType: q.body.collateralType,
+      collateralAmount:
+        q.body.collateralType === "cash"
+          ? Number(
+              booking.pricingSnapshot?.pickupCollateralCash ??
+                d.pricingPolicy.pickupCollateralCash,
+            )
+          : null,
+      vneidVerified: true,
+      collateralReceived: true,
+      identityAndLicenseVerified: true,
+      videoCompared: true,
+      amenitiesAndDocumentsChecked: true,
+      vehicleInspectedAndClean: true,
+    };
   if (notes) {
     evidence.notesHistory.push({
       uploaderId: q.authUser.id,
@@ -3268,6 +3563,8 @@ app.post("/api/evidence", requireRole(["renter", "owner", "admin"]), (q, s) => {
       .map((item) => `[${item.phase} · ${item.uploaderRole}] ${item.notes}`)
       .join("\n");
   }
+  if (phase === "checkout" && isCurrentPolicy)
+    evidence.returnCharges = calculateReturnCharges(d, booking, evidence, now);
   evidence.status = phase === "checkout" ? "Complete" : evidence.status;
   evidence.updatedBy = q.authUser.id;
   evidence.updatedAt = now;
@@ -3283,7 +3580,11 @@ app.post("/api/evidence", requireRole(["renter", "owner", "admin"]), (q, s) => {
   const previousBookingStatus = booking.status;
   if (
     phase === "checkin" &&
-    ["Contract Signed", "Ready for Check-in"].includes(booking.status)
+    ["Contract Signed", "Ready for Check-in"].includes(booking.status) &&
+    (!isCurrentPolicy || evidence.ownerHandoverConfirmation) &&
+    (!isCurrentPolicy ||
+      (evidence.ownerHandoverConfirmation.identityAndLicenseVerified &&
+        evidence.ownerHandoverConfirmation.vneidVerified))
   )
     booking.status = "Ongoing";
   if (phase === "checkout" && booking.status === "Ongoing")
@@ -3303,7 +3604,10 @@ app.post("/api/evidence", requireRole(["renter", "owner", "admin"]), (q, s) => {
     userId:
       q.authUser.id === booking.renterId ? booking.ownerId : booking.renterId,
     title: `Bằng chứng ${phase === "checkin" ? "nhận xe" : "trả xe"} mới`,
-    message: `Booking #PC${booking.id} có biên bản ${phase} mới.`,
+    message:
+      phase === "checkout" && evidence.returnCharges?.totalFee
+        ? `Booking #PC${booking.id} có biên bản trả xe mới; phí đối soát dự kiến ${evidence.returnCharges.totalFee.toLocaleString("vi-VN")}đ.`
+        : `Booking #PC${booking.id} có biên bản ${phase} mới.`,
     type: "evidence",
     read: false,
     createdAt: now,
