@@ -90,8 +90,6 @@ Dự án có cấu hình Render Blueprint tại [`render.yaml`](./render.yaml). 
 
 Chủ xe gửi tin với ảnh trước; admin xem hồ sơ và có thể yêu cầu bổ sung đăng ký xe, bảo hiểm qua thông báo. Chủ xe tải giấy tờ trong mục riêng tư của tin đang chờ duyệt; chỉ admin được xem và duyệt công khai sau khi nhận đủ hồ sơ.
 
-Seed demo có sáu tin xe minh họa đang chờ duyệt với ảnh tĩnh; chúng không được hiển thị công khai hoặc cho thuê trước khi admin kiểm duyệt, và luôn bị khóa đặt xe do là tin demo.
-
 Khi không có `DATABASE_URL`, dịch vụ tiếp tục dùng JSON như trước. Với PostgreSQL, dữ liệu ứng dụng hiện được lưu thành một tài liệu JSONB đơn và chỉ hỗ trợ một instance ứng dụng; tệp tải lên vẫn cần persistent disk hoặc object storage. Xem [hướng dẫn PostgreSQL](./docs/POSTGRESQL.md) trước khi chuyển môi trường đang chạy.
 
 ## Cấu trúc dự án

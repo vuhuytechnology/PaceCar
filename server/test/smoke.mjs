@@ -87,25 +87,9 @@ try {
     { token: admin },
   );
   assert.equal(seededDemoListings.status, 200);
-  const sixDemoListings = seededDemoListings.body.filter(
-    (car) => car.demoOnly,
-  );
-  assert.equal(sixDemoListings.length, 6);
-  assert.ok(
-    sixDemoListings.every(
-      (car) =>
-        car.listingStatus === "Pending Review" &&
-        car.photos.length >= 3 &&
-        car.documents.length === 0,
-    ),
-    JSON.stringify(
-      sixDemoListings.map(({ name, listingStatus, photos, documents }) => ({
-        name,
-        listingStatus,
-        photoCount: photos?.length,
-        documents,
-      })),
-    ),
+  assert.equal(
+    seededDemoListings.body.some((car) => car.demoOnly),
+    false,
   );
   assert.equal(
     (await request("/payment-account", { token: renter })).status,
