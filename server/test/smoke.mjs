@@ -1075,6 +1075,7 @@ try {
     token: registeredOwner.body.token,
     body: JSON.stringify({
       ...qaListing,
+      photos: qaListing.photos.slice(0, 2),
       demoOnly: true,
       submitForReview: true,
     }),
@@ -1082,6 +1083,7 @@ try {
   assert.equal(submittedCar.status, 201, JSON.stringify(submittedCar.body));
   assert.equal(submittedCar.body.listingStatus, "Pending Review");
   assert.equal(submittedCar.body.demoOnly, false);
+  assert.equal(submittedCar.body.photos.length, 2);
   const photoOnlyDraft = await request("/cars", {
     method: "POST",
     token: registeredOwner.body.token,
@@ -1108,29 +1110,6 @@ try {
     JSON.stringify(photoOnlySubmission.body),
   );
   assert.equal(photoOnlySubmission.body.listingStatus, "Pending Review");
-  const twoPhotoSubmission = await request("/cars", {
-    method: "POST",
-    token: registeredOwner.body.token,
-    body: JSON.stringify({
-      ...qaListing,
-      name: "QA Two-photo Submission Car",
-      licensePlate: "30A-QA125",
-      photos: qaListing.photos.slice(0, 2),
-      submitForReview: true,
-    }),
-  });
-  assert.equal(twoPhotoSubmission.status, 201, JSON.stringify(twoPhotoSubmission.body));
-  assert.equal(twoPhotoSubmission.body.listingStatus, "Pending Review");
-  const twoPhotoPublication = await request(
-    `/cars/${twoPhotoSubmission.body.id}/listing-status`,
-    {
-      method: "PUT",
-      token: admin,
-      body: JSON.stringify({ status: "Published" }),
-    },
-  );
-  assert.equal(twoPhotoPublication.status, 422);
-  assert.ok(twoPhotoPublication.body.errors.includes("Cần ít nhất 3 ảnh xe"));
   const ownerDocsBeforeRequest = await request(
     `/cars/${submittedCar.body.id}`,
     {
@@ -1161,6 +1140,9 @@ try {
   );
   assert.ok(
     missingDocumentsApproval.body.errors.includes("Thiếu bảo hiểm xe"),
+  );
+  assert.ok(
+    !missingDocumentsApproval.body.errors.includes("Cần ít nhất 2 ảnh xe"),
   );
   const prematureDocumentUpload = new FormData();
   prematureDocumentUpload.append(
@@ -1238,6 +1220,7 @@ try {
     },
   );
   assert.equal(demoPublished.status, 200, JSON.stringify(demoPublished.body));
+  assert.equal(demoPublished.body.photos.length, 2);
   assert.equal(demoPublished.body.demoOnly, true);
   assert.equal(demoPublished.body.verified, false);
   const demoQuote = await request("/quotes", {

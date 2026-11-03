@@ -453,7 +453,7 @@ const listingErrors = (car, requireDocuments = false) => {
     errors.push("Mô tả cần ít nhất 20 ký tự");
   const photos = Array.isArray(car.photos) ? car.photos : [];
   if (!Array.isArray(car.photos)) errors.push("Danh sách ảnh không hợp lệ");
-  const minimumPhotos = requireDocuments ? 3 : 2;
+  const minimumPhotos = 2;
   if (photos.length < minimumPhotos)
     errors.push(`Cần ít nhất ${minimumPhotos} ảnh xe`);
   if (photos.length > 10) errors.push("Chỉ được đăng tối đa 10 ảnh");
