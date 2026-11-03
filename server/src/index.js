@@ -1859,9 +1859,10 @@ app.post("/api/cars", requireRole(["owner"]), (q, s) => {
     x.licensePlate &&
     d.cars.some(
       (car) =>
-        String(car.licensePlate || "")
-          .toUpperCase()
-          .replace(/\s+/g, "") === x.licensePlate,
+      car.listingStatus !== "Archived" &&
+      String(car.licensePlate || "")
+        .toUpperCase()
+        .replace(/\s+/g, "") === x.licensePlate,
     )
   )
     return s.status(409).json({ message: "Biển số xe đã tồn tại" });
@@ -2013,6 +2014,7 @@ app.put("/api/cars/:id", requireRole(["owner", "admin"]), (q, s) => {
       d.cars.some(
         (car) =>
           car.id !== d.cars[i].id &&
+          car.listingStatus !== "Archived" &&
           String(car.licensePlate || "")
             .toUpperCase()
             .replace(/\s+/g, "") === safeBody.licensePlate,

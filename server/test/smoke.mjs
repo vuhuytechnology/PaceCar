@@ -1281,6 +1281,47 @@ try {
   });
   assert.equal(resume.status, 409);
 
+  const archivedPlateListing = await request("/cars", {
+    method: "POST",
+    token: registeredOwner.body.token,
+    body: JSON.stringify({
+      ...qaListing,
+      name: "QA Archived Plate Listing",
+      licensePlate: "30A-ARCHIVE1",
+    }),
+  });
+  assert.equal(archivedPlateListing.status, 201);
+  const archivedPlate = await request(
+    `/cars/${archivedPlateListing.body.id}`,
+    { method: "DELETE", token: admin },
+  );
+  assert.equal(archivedPlate.status, 204);
+  const reusedArchivedPlate = await request("/cars", {
+    method: "POST",
+    token: registeredOwner.body.token,
+    body: JSON.stringify({
+      ...qaListing,
+      name: "QA Reused Archived Plate Listing",
+      licensePlate: "30a-archive1",
+    }),
+  });
+  assert.equal(
+    reusedArchivedPlate.status,
+    201,
+    JSON.stringify(reusedArchivedPlate.body),
+  );
+  const duplicateActivePlate = await request("/cars", {
+    method: "POST",
+    token: registeredOwner.body.token,
+    body: JSON.stringify({
+      ...qaListing,
+      name: "QA Duplicate Active Plate Listing",
+      licensePlate: "30A-ARCHIVE1",
+    }),
+  });
+  assert.equal(duplicateActivePlate.status, 409);
+  assert.equal(duplicateActivePlate.body.message, "Biển số xe đã tồn tại");
+
   console.log(
     "PaceCar API end-to-end tests passed (search and filters, car details, server-side quotes, role dashboards, bookings, payment, contracts, check-in/out evidence, reviews, disputes, listings, promotions, trust, and risk alerts).",
   );
