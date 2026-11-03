@@ -1026,6 +1026,54 @@ try {
     token: owner,
   });
   assert.equal(signedBooking.body.status, "Contract Signed");
+  assert.equal(signedBooking.body.balancePaymentStatus, "Unpaid");
+  const unpaidBalanceStart = await request(
+    `/bookings/${booking.body.id}/status`,
+    {
+      method: "PUT",
+      token: owner,
+      body: JSON.stringify({ status: "Ongoing" }),
+    },
+  );
+  assert.equal(unpaidBalanceStart.status, 409);
+  assert.match(unpaidBalanceStart.body.message, /tiền thuê còn lại/i);
+  const balancePayment = await request(
+    `/bookings/${booking.body.id}/balance-payment`,
+    {
+      method: "POST",
+      token: renter,
+      body: JSON.stringify({}),
+    },
+  );
+  assert.equal(balancePayment.status, 201, JSON.stringify(balancePayment.body));
+  assert.equal(balancePayment.body.balancePaymentStatus, "Pending");
+  assert.equal(balancePayment.body.amount, booking.body.totalPrice);
+  assert.equal(balancePayment.body.paymentPurpose, "rental_balance");
+  assert.equal(new URL(balancePayment.body.qrUrl).searchParams.get("acc"), "0123456789");
+  const ownerBalanceView = await request(`/bookings/${booking.body.id}`, {
+    token: owner,
+  });
+  assert.equal(ownerBalanceView.body.pendingBalancePayment.amount, booking.body.totalPrice);
+  assert.equal(
+    (
+      await request(`/bookings/${booking.body.id}/balance-payment/confirm`, {
+        method: "POST",
+        token: owner,
+        body: JSON.stringify({ confirmedReceived: false }),
+      })
+    ).status,
+    400,
+  );
+  const confirmedBalance = await request(
+    `/bookings/${booking.body.id}/balance-payment/confirm`,
+    {
+      method: "POST",
+      token: owner,
+      body: JSON.stringify({ confirmedReceived: true }),
+    },
+  );
+  assert.equal(confirmedBalance.status, 200);
+  assert.equal(confirmedBalance.body.balancePaymentStatus, "Paid");
   const journeyEvidenceUpload = new FormData();
   journeyEvidenceUpload.append(
     "files",

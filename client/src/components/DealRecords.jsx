@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { CheckCircle2, Wallet } from "lucide-react";
 import { api, dateTime, money } from "../services/api";
 import { Button, Modal, useToast } from "./UI";
 
@@ -35,6 +36,236 @@ export function PriceConditions({ quote }) {
         riêng, không nằm trong tổng phí thuê.
       </p>
     </section>
+  );
+}
+
+export function RentalBalancePaymentPanel({ booking, user, reload }) {
+  const toast = useToast();
+  const [working, setWorking] = useState(false);
+  const [paymentDetails, setPaymentDetails] = useState(null);
+  const [decision, setDecision] = useState(null);
+  const isRenter = user?.role === "renter" && user.id === booking.renterId;
+  const isOwner = user?.role === "owner" && user.id === booking.ownerId;
+  if (
+    (!isRenter && !isOwner) ||
+    !["Contract Signed", "Ready for Check-in"].includes(booking.status) ||
+    !booking.balancePaymentStatus ||
+    ["Not Tracked", "Not Required"].includes(booking.balancePaymentStatus)
+  )
+    return null;
+
+  async function createPayment() {
+    setWorking(true);
+    try {
+      const result = await api(`/bookings/${booking.id}/balance-payment`, {
+        method: "POST",
+      });
+      if (result.balancePaymentStatus === "Pending") {
+        setPaymentDetails(result);
+        await reload?.();
+      }
+      else {
+        toast.success("Chủ xe đã xác nhận khoản tiền thuê");
+        await reload?.();
+      }
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function resolveDecision() {
+    if (!decision) return;
+    setWorking(true);
+    try {
+      const confirm = decision === "confirm";
+      await api(
+        `/bookings/${booking.id}/balance-payment/${confirm ? "confirm" : "cancel"}`,
+        {
+          method: "POST",
+          body: JSON.stringify(
+            confirm
+              ? { confirmedReceived: true }
+              : { confirmedNoTransfer: true },
+          ),
+        },
+      );
+      toast.success(
+        confirm
+          ? "Đã xác nhận nhận đủ tiền thuê"
+          : "Đã hủy QR tiền thuê",
+      );
+      setDecision(null);
+      await reload?.();
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  return (
+    <>
+      <section className="card mb-5 border-blue-200 p-5">
+        <h2 className="flex items-center gap-2 text-lg font-bold">
+          <Wallet size={19} /> Thanh toán tiền thuê còn lại
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          Người thuê chuyển {money(booking.rentalBalanceAmount)} trực tiếp cho
+          chủ xe trước hoặc lúc nhận xe. Tiền cọc là khoản bảo đảm riêng, không
+          trừ vào tiền thuê. Chủ xe cần đối chiếu giao dịch ngân hàng và xác
+          nhận trên PaceCar trước khi bắt đầu chuyến.
+        </p>
+        {booking.balancePaymentStatus === "Paid" ? (
+          <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-emerald-700">
+            <CheckCircle2 size={17} /> Chủ xe đã xác nhận đã nhận đủ tiền thuê.
+          </p>
+        ) : booking.balancePaymentStatus === "Pending" ? (
+          <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+            {isRenter ? (
+              <>
+                QR đang chờ chủ xe đối chiếu xác nhận.
+                <Button
+                  className="ml-3"
+                  variant="outline"
+                  disabled={working}
+                  onClick={createPayment}
+                >
+                  Mở QR
+                </Button>
+              </>
+            ) : (
+              <>
+                <p>
+                  Đang chờ xác nhận ·{" "}
+                  {money(booking.pendingBalancePayment?.amount)} ·{" "}
+                  {booking.pendingBalancePayment?.transferCode || "Đang tải mã"}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    disabled={working}
+                    onClick={() => setDecision("confirm")}
+                  >
+                    Xác nhận đã nhận tiền
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={working}
+                    onClick={() => setDecision("cancel")}
+                  >
+                    Hủy QR
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="mt-3">
+            {isRenter ? (
+              <Button disabled={working} onClick={createPayment}>
+                {working ? "Đang tạo QR..." : "Tạo QR thanh toán"}
+              </Button>
+            ) : (
+              <p className="text-sm text-slate-500">
+                Đang chờ người thuê tạo QR và chuyển khoản.
+              </p>
+            )}
+          </div>
+        )}
+      </section>
+      <Modal
+        open={!!paymentDetails}
+        title="QR thanh toán tiền thuê"
+        onClose={() => !working && setPaymentDetails(null)}
+        actions={
+          <Button
+            variant="outline"
+            disabled={working}
+            onClick={() => setPaymentDetails(null)}
+          >
+            Đóng
+          </Button>
+        }
+      >
+        {paymentDetails && (
+          <div className="space-y-4">
+            <p>
+              Tiền chuyển trực tiếp đến tài khoản chủ xe. PaceCar không nhận
+              hoặc giữ khoản tiền thuê này.
+            </p>
+            <img
+              src={paymentDetails.qrUrl}
+              alt={`QR chuyển ${money(paymentDetails.amount)} cho booking ${booking.id}`}
+              className="mx-auto aspect-square w-56 rounded-xl border bg-white object-contain p-2"
+            />
+            <dl className="grid gap-2 rounded-xl bg-slate-50 p-4 text-sm">
+              <div className="flex justify-between gap-4">
+                <dt>Ngân hàng</dt>
+                <dd className="text-right font-semibold">
+                  {paymentDetails.recipient.bankCode}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt>Số tài khoản</dt>
+                <dd className="text-right font-semibold">
+                  {paymentDetails.recipient.accountNumber}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt>Chủ tài khoản</dt>
+                <dd className="text-right font-semibold">
+                  {paymentDetails.recipient.accountHolder}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt>Số tiền chính xác</dt>
+                <dd className="text-right font-bold">
+                  {money(paymentDetails.amount)}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt>Nội dung chuyển khoản</dt>
+                <dd className="text-right font-bold text-brand-700">
+                  {paymentDetails.transferCode}
+                </dd>
+              </div>
+            </dl>
+            <p className="text-xs text-slate-500">
+              QR chỉ tạo hướng dẫn chuyển khoản. Chủ xe sẽ xác nhận sau khi
+              kiểm tra đúng số tiền đã vào tài khoản.
+            </p>
+          </div>
+        )}
+      </Modal>
+      <Modal
+        open={!!decision}
+        title={
+          decision === "confirm"
+            ? "Xác nhận đã nhận tiền thuê"
+            : "Hủy QR tiền thuê"
+        }
+        onClose={() => !working && setDecision(null)}
+        actions={
+          <>
+            <Button
+              variant="outline"
+              disabled={working}
+              onClick={() => setDecision(null)}
+            >
+              Quay lại
+            </Button>
+            <Button disabled={working} onClick={resolveDecision}>
+              {working ? "Đang xử lý..." : "Xác nhận"}
+            </Button>
+          </>
+        }
+      >
+        {decision === "confirm"
+          ? "Chỉ xác nhận sau khi đã kiểm tra và nhận đủ tiền trong tài khoản."
+          : "Chỉ hủy sau khi đã kiểm tra và chắc chắn chưa nhận tiền. Không chuyển tiền theo QR đã hủy."}
+      </Modal>
+    </>
   );
 }
 

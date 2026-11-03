@@ -331,6 +331,31 @@ export function MyBookings() {
                     )}
                   </p>
                 )}
+                {b.balancePaymentStatus === "Paid" && (
+                  <p className="mt-1 text-xs font-bold text-emerald-600">
+                    ✓ Chủ xe đã xác nhận nhận đủ tiền thuê
+                  </p>
+                )}
+                {b.balancePaymentStatus === "Pending" && (
+                  <p className="mt-1 text-xs font-semibold text-amber-700">
+                    QR tiền thuê đang chờ xác nhận
+                    {user.role === "owner" && b.pendingBalancePayment && (
+                      <>
+                        {" "}
+                        · {money(b.pendingBalancePayment.amount)} ·{" "}
+                        {b.pendingBalancePayment.transferCode}
+                      </>
+                    )}
+                  </p>
+                )}
+                {b.balancePaymentStatus === "Unpaid" &&
+                  ["Contract Signed", "Ready for Check-in"].includes(
+                    b.status,
+                  ) && (
+                    <p className="mt-1 text-xs font-semibold text-amber-700">
+                      Chưa xác nhận thanh toán tiền thuê còn lại
+                    </p>
+                  )}
                 <div className="mt-2 flex gap-2">
                   {user.role === "owner" && (
                     <>

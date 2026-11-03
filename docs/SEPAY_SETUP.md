@@ -25,6 +25,14 @@ Thông tin tài khoản cọc được lưu riêng theo chủ xe; chỉ chủ xe
 
 Các bản ghi cũ có `paymentStatus: "Paid"` được giữ nguyên; ứng dụng không tự giả định các khoản đó đã được ngân hàng đối soát. Cần rà soát thủ công các giao dịch cũ trước khi sử dụng trạng thái đó cho hoạt động thật.
 
+## Tiền thuê còn lại
+
+- Sau khi hợp đồng có đủ chữ ký, người thuê tạo QR cho toàn bộ tổng phí thuê (`totalPrice`) tại trang hợp đồng hoặc biên bản giao nhận.
+- Tiền cọc hoàn lại là khoản bảo đảm riêng, không được trừ khỏi tổng phí thuê. QR tiền thuê chuyển thẳng vào tài khoản nhận tiền của chủ xe; PaceCar không nhận hoặc giữ khoản này.
+- Chủ xe đối chiếu sao kê rồi xác nhận hoặc hủy QR trong trang hợp đồng/đơn thuê. Không xác nhận dựa trên ảnh chụp. Chuyến không thể chuyển sang `Ongoing` cho đến khi chủ xe xác nhận đã nhận đủ tiền thuê.
+- Booking tạo trước khi bật theo dõi khoản tiền thuê còn lại không tự bị đánh dấu chưa thanh toán, tránh thu lại khoản đã được hai bên thanh toán trực tiếp.
+- QR không tự xác minh giao dịch. Admin không ghi nhận tiền thuê này là doanh thu PaceCar; doanh thu của admin chỉ phát sinh từ hoa hồng chủ xe đã được admin xác nhận ở bước tiếp theo.
+
 ## Hoa hồng chủ xe chuyển cho PaceCar
 
 - Hoa hồng được ghi nhận khi booking **lần đầu chuyển sang `Completed`**. Các booking đã hoàn tất trước khi bật luồng này không bị tính hồi tố.
@@ -33,6 +41,7 @@ Các bản ghi cũ có `paymentStatus: "Paid"` được giữ nguyên; ứng d�
 - Admin đăng nhập **Trung tâm quản trị → Tài khoản nhận hoa hồng SePay** để cấu hình ngân hàng, số tài khoản và tên chủ tài khoản nhận tiền của PaceCar.
 - Chủ xe mở **Đơn thuê xe → Hoa hồng nền tảng**, tạo QR và chuyển đúng số tiền cùng nội dung chuyển khoản hiển thị.
 - Admin đối chiếu sao kê tài khoản nhận tiền theo đúng số tiền và mã chuyển khoản, sau đó chọn **Xác nhận đã nhận tiền**. Không xác nhận dựa trên ảnh chụp do chủ xe gửi.
+- Doanh thu hoa hồng chỉ được tính sau khi admin xác nhận; các khoản chưa trả hoặc đang chờ đối soát được hiển thị riêng trong số liệu quản trị.
 
 Luồng này dùng QR chuyển khoản SePay, chưa tích hợp webhook/API để tự đối soát. Trạng thái chỉ chuyển sang đã thanh toán sau khi admin xác nhận thủ công. Tài khoản nhận hoa hồng độc lập với tài khoản nhận tiền cọc của từng chủ xe.
 

@@ -173,8 +173,17 @@ const bookingView = (data, booking, viewer) => {
       payment.bookingId === booking.id &&
       payment.status === "Pending",
   );
+  const pendingBalancePayment = data.payments?.find(
+    (payment) =>
+      payment.id === booking.balancePaymentId &&
+      payment.bookingId === booking.id &&
+      payment.purpose === "rental_balance" &&
+      payment.status === "Pending",
+  );
   return {
     ...booking,
+    balancePaymentStatus: booking.balancePaymentStatus || "Not Tracked",
+    rentalBalanceAmount: booking.totalPrice,
     reviewed: data.reviews.some((review) => review.bookingId === booking.id),
     car: bookingCarFor(viewer, find(data.cars, booking.carId)),
     renter: publicUser(find(data.users, booking.renterId)),
@@ -186,6 +195,16 @@ const bookingView = (data, booking, viewer) => {
           pendingPayment: {
             amount: pendingPayment.amount,
             transferCode: pendingPayment.transferCode,
+          },
+        }
+      : {}),
+    ...(viewer.role === "owner" &&
+    viewer.id === booking.ownerId &&
+    pendingBalancePayment
+      ? {
+          pendingBalancePayment: {
+            amount: pendingBalancePayment.amount,
+            transferCode: pendingBalancePayment.transferCode,
           },
         }
       : {}),
@@ -264,6 +283,18 @@ const createCommissionReceivable = (data, booking, actorId) => {
   });
   return commission;
 };
+const commissionTotals = (data) =>
+  (data.commissions || []).reduce(
+    (totals, commission) => {
+      if (commission.chargeable !== true) return totals;
+      if (commission.status === "Paid")
+        totals.paid += Number(commission.amount) || 0;
+      else if (["Due", "Pending"].includes(commission.status))
+        totals.receivable += Number(commission.amount) || 0;
+      return totals;
+    },
+    { paid: 0, receivable: 0 },
+  );
 const analyticsDateKey = (value) => {
   const date = value instanceof Date ? value : new Date(value);
   if (!Number.isFinite(date.getTime())) return null;
@@ -957,14 +988,35 @@ const contractTermsFor = (booking, car) =>
     `Cuối tuần trả xe trước ${booking.pricingSnapshot?.weekendReturnDeadline ?? "21:00"}; trễ tính ${Number(booking.pricingSnapshot?.weekendLateFeePerHour ?? 50000).toLocaleString("vi-VN")}đ/giờ, qua 00:00 tính thêm ngày. Xe điện thiếu pin tính ${Number(booking.pricingSnapshot?.batteryShortfallFeePerPercent ?? 2000).toLocaleString("vi-VN")}đ cho mỗi điểm phần trăm.`,
     `Tại lúc nhận xe, người thuê cung cấp ${Number(booking.pricingSnapshot?.pickupCollateralCash ?? 15000000).toLocaleString("vi-VN")}đ tiền mặt hoặc xe máy làm tài sản bảo đảm riêng với khoản cọc online hoàn lại. Chủ xe đối chiếu CCCD/GPLX và VNeID trực tiếp, kiểm tra xe/giấy tờ/tiện ích, đồng thời hai bên quay và đối chiếu video trực tiếp; video không được tải lên website.`,
   ].join(" ");
-const contractView = (data, contract, booking) => ({
-  ...contract,
-  persisted: Boolean(contract.id),
-  booking,
-  car: publicCar(find(data.cars, booking.carId)),
-  renter: publicUser(find(data.users, booking.renterId)),
-  owner: publicUser(find(data.users, booking.ownerId)),
-});
+const contractView = (data, contract, booking) => {
+  const pendingBalancePayment = data.payments?.find(
+    (payment) =>
+      payment.id === booking.balancePaymentId &&
+      payment.bookingId === booking.id &&
+      payment.purpose === "rental_balance" &&
+      payment.status === "Pending",
+  );
+  return {
+    ...contract,
+    persisted: Boolean(contract.id),
+    booking: {
+      ...booking,
+      balancePaymentStatus: booking.balancePaymentStatus || "Not Tracked",
+      rentalBalanceAmount: booking.totalPrice,
+      ...(pendingBalancePayment
+        ? {
+            pendingBalancePayment: {
+              amount: pendingBalancePayment.amount,
+              transferCode: pendingBalancePayment.transferCode,
+            },
+          }
+        : {}),
+    },
+    car: publicCar(find(data.cars, booking.carId)),
+    renter: publicUser(find(data.users, booking.renterId)),
+    owner: publicUser(find(data.users, booking.ownerId)),
+  };
+};
 const evidenceAssetView = (data, value) => {
   const asset = find(data.uploadedAssets, value?.id ?? value);
   return asset?.kind === "evidence"
@@ -1109,6 +1161,318 @@ app.post("/api/analytics/page-view", pageViewLimiter, (q, s) => {
   s.sendStatus(204);
 });
 app.post(
+  "/api/bookings/:id/balance-payment",
+  requireRole(["renter"]),
+  (q, s) => {
+    const d = read(),
+      booking = find(d.bookings, q.params.id);
+    if (!booking)
+      return s.status(404).json({ message: "Không tìm thấy booking" });
+    if (booking.renterId !== q.authUser.id)
+      return s
+        .status(403)
+        .json({ message: "Bạn không có quyền thanh toán booking này" });
+    if (find(d.cars, booking.carId)?.demoOnly)
+      return s
+        .status(409)
+        .json({ message: "Xe demo không nhận thanh toán" });
+    if (!["Contract Signed", "Ready for Check-in"].includes(booking.status))
+      return s.status(409).json({
+        message: "Chỉ thanh toán phần còn lại sau khi hai bên ký hợp đồng",
+      });
+    if (!booking.balancePaymentStatus)
+      return s.status(409).json({
+        message: "Booking cũ chưa được bật theo dõi tiền thuê còn lại",
+      });
+    if (booking.balancePaymentStatus === "Paid")
+      return s.json({
+        bookingId: booking.id,
+        balancePaymentStatus: "Paid",
+        paidAt: booking.balancePaidAt,
+        amount: booking.totalPrice,
+      });
+    if (booking.balancePaymentStatus === "Not Required")
+      return s.status(409).json({
+        message: "Booking không có khoản tiền thuê còn lại cần thanh toán",
+      });
+    if (booking.paymentStatus !== "Paid")
+      return s.status(409).json({
+        message: "Chủ xe cần xác nhận tiền cọc trước khi thanh toán tiền thuê",
+      });
+    if (hasPendingPriceRevision(booking))
+      return s.status(409).json({
+        message: "Vui lòng xác nhận báo giá mới trước khi thanh toán",
+      });
+    const amount = booking.totalPrice;
+    if (!Number.isSafeInteger(amount) || amount <= 0)
+      return s.status(409).json({
+        message: "Booking không có tổng tiền thuê hợp lệ để thanh toán",
+      });
+    const contract = d.contracts.find(
+      (item) => item.bookingId === booking.id,
+    );
+    if (!contract?.renterSigned || !contract?.ownerSigned)
+      return s.status(409).json({
+        message: "Cần đủ chữ ký hợp đồng trước khi thanh toán tiền thuê",
+      });
+    if (booking.balancePaymentStatus === "Pending") {
+      const pending = d.payments.find(
+        (payment) =>
+          payment.id === booking.balancePaymentId &&
+          payment.bookingId === booking.id &&
+          payment.purpose === "rental_balance" &&
+          payment.amount === amount &&
+          payment.status === "Pending",
+      );
+      if (!pending)
+        return s.status(409).json({
+          message: "Thông tin thanh toán tiền thuê đang chờ không nhất quán",
+        });
+      return s.json({
+        paymentId: pending.id,
+        bookingId: booking.id,
+        paymentPurpose: pending.purpose,
+        balancePaymentStatus: booking.balancePaymentStatus,
+        amount: pending.amount,
+        transferCode: pending.transferCode,
+        qrUrl: pending.qrUrl,
+        recipient: pending.recipient,
+        createdAt: pending.createdAt,
+      });
+    }
+    if (booking.balancePaymentStatus !== "Unpaid")
+      return s.status(409).json({
+        message: "Trạng thái tiền thuê còn lại không hợp lệ",
+      });
+    const account = d.paymentAccounts.find(
+      (item) => item.ownerId === booking.ownerId,
+    );
+    if (!account)
+      return s.status(409).json({
+        message: "Chủ xe chưa cấu hình tài khoản nhận tiền",
+      });
+    const paymentId = nextId(d.payments);
+    const transferCode = `PC${booking.id}B${paymentId}`;
+    const createdAt = new Date().toISOString();
+    const payment = {
+      id: paymentId,
+      bookingId: booking.id,
+      renterId: booking.renterId,
+      ownerId: booking.ownerId,
+      purpose: "rental_balance",
+      amount,
+      transferCode,
+      qrUrl: sepayQrUrl({
+        bankCode: account.bankCode,
+        accountNumber: account.accountNumber,
+        amount,
+        transferCode,
+      }),
+      recipient: {
+        bankCode: account.bankCode,
+        accountNumber: account.accountNumber,
+        accountHolder: account.accountHolder,
+      },
+      status: "Pending",
+      createdAt,
+    };
+    d.payments.push(payment);
+    booking.balancePaymentStatus = "Pending";
+    booking.balancePaymentId = paymentId;
+    d.auditLogs.push({
+      id: nextId(d.auditLogs),
+      entity: "booking",
+      entityId: booking.id,
+      action: "RENTAL_BALANCE_PAYMENT_INSTRUCTIONS_CREATED",
+      actorId: q.authUser.id,
+      detail: `${amount}:${transferCode}`,
+      createdAt,
+    });
+    d.notifications.push({
+      id: nextId(d.notifications),
+      userId: booking.ownerId,
+      title: "Người thuê yêu cầu QR thanh toán tiền thuê",
+      message: `Booking #PC${booking.id} có mã chuyển khoản ${transferCode}; chỉ xác nhận sau khi đối chiếu đủ số tiền trong tài khoản.`,
+      type: "payment",
+      read: false,
+      createdAt,
+    });
+    write(d);
+    s.status(201).json({
+      paymentId: payment.id,
+      bookingId: booking.id,
+      paymentPurpose: payment.purpose,
+      balancePaymentStatus: booking.balancePaymentStatus,
+      amount: payment.amount,
+      transferCode: payment.transferCode,
+      qrUrl: payment.qrUrl,
+      recipient: payment.recipient,
+      createdAt,
+    });
+  },
+);
+app.post(
+  "/api/bookings/:id/balance-payment/confirm",
+  requireRole(["owner"]),
+  (q, s) => {
+    const d = read(),
+      booking = find(d.bookings, q.params.id);
+    if (!booking)
+      return s.status(404).json({ message: "Không tìm thấy booking" });
+    if (booking.ownerId !== q.authUser.id)
+      return s.status(403).json({ message: "Bạn không sở hữu booking này" });
+    if (booking.balancePaymentStatus === "Paid")
+      return s.json({
+        bookingId: booking.id,
+        balancePaymentStatus: "Paid",
+        paidAt: booking.balancePaidAt,
+      });
+    if (!["Contract Signed", "Ready for Check-in"].includes(booking.status))
+      return s.status(409).json({
+        message: "Chỉ đối soát tiền thuê trước khi bắt đầu chuyến",
+      });
+    if (booking.balancePaymentStatus !== "Pending")
+      return s.status(409).json({
+        message: "Booking không có khoản tiền thuê đang chờ xác nhận",
+      });
+    if (q.body.confirmedReceived !== true)
+      return s.status(400).json({
+        message: "Cần xác nhận đã kiểm tra và nhận đủ tiền trong tài khoản",
+      });
+    const payment = d.payments.find(
+      (item) =>
+        item.id === booking.balancePaymentId &&
+        item.bookingId === booking.id &&
+        item.ownerId === q.authUser.id &&
+        item.purpose === "rental_balance" &&
+        item.amount === booking.totalPrice &&
+        item.status === "Pending",
+    );
+    if (!payment)
+      return s.status(409).json({
+        message: "Không tìm thấy khoản thanh toán tiền thuê đang chờ hợp lệ",
+      });
+    const confirmedAt = new Date().toISOString();
+    payment.status = "Confirmed";
+    payment.confirmedBy = q.authUser.id;
+    payment.confirmedAt = confirmedAt;
+    booking.balancePaymentStatus = "Paid";
+    booking.balancePaidAt = confirmedAt;
+    const evidence = d.evidence.find((item) => item.bookingId === booking.id);
+    const requiresOwnerChecklist =
+      booking.pricingSnapshot?.policyVersion === RENTAL_POLICY_VERSION;
+    const ownerChecklistComplete =
+      evidence?.ownerHandoverConfirmation?.identityAndLicenseVerified &&
+      evidence.ownerHandoverConfirmation.vneidVerified;
+    const tripCanStart =
+      ["Contract Signed", "Ready for Check-in"].includes(booking.status) &&
+      evidencePhaseComplete(evidence, "checkin") &&
+      (!requiresOwnerChecklist || ownerChecklistComplete);
+    const previousBookingStatus = booking.status;
+    if (tripCanStart) booking.status = "Ongoing";
+    d.auditLogs.push({
+      id: nextId(d.auditLogs),
+      entity: "booking",
+      entityId: booking.id,
+      action: "RENTAL_BALANCE_PAYMENT_CONFIRMED_BY_OWNER",
+      actorId: q.authUser.id,
+      detail: `${payment.amount}:${payment.transferCode}`,
+      createdAt: confirmedAt,
+    });
+    if (tripCanStart)
+      d.auditLogs.push({
+        id: nextId(d.auditLogs),
+        entity: "booking",
+        entityId: booking.id,
+        action: "STATUS_CHANGED",
+        actorId: q.authUser.id,
+        detail: `${previousBookingStatus} → Ongoing (rental balance confirmed)`,
+        createdAt: confirmedAt,
+      });
+    d.notifications.push({
+      id: nextId(d.notifications),
+      userId: booking.renterId,
+      title: "Chủ xe đã xác nhận tiền thuê",
+      message: `Chủ xe xác nhận đã nhận đủ tiền thuê còn lại cho booking #PC${booking.id}.${tripCanStart ? " Bằng chứng nhận xe đã đầy đủ; chuyến thuê đã bắt đầu." : ""}`,
+      type: "payment",
+      read: false,
+      createdAt: confirmedAt,
+    });
+    write(d);
+    s.json({
+      bookingId: booking.id,
+      balancePaymentStatus: booking.balancePaymentStatus,
+      paidAt: confirmedAt,
+      amount: payment.amount,
+    });
+  },
+);
+app.post(
+  "/api/bookings/:id/balance-payment/cancel",
+  requireRole(["owner"]),
+  (q, s) => {
+    const d = read(),
+      booking = find(d.bookings, q.params.id);
+    if (!booking)
+      return s.status(404).json({ message: "Không tìm thấy booking" });
+    if (booking.ownerId !== q.authUser.id)
+      return s.status(403).json({ message: "Bạn không sở hữu booking này" });
+    if (!["Contract Signed", "Ready for Check-in"].includes(booking.status))
+      return s.status(409).json({
+        message: "Chỉ hủy QR tiền thuê trước khi bắt đầu chuyến",
+      });
+    if (booking.balancePaymentStatus !== "Pending")
+      return s.status(409).json({
+        message: "Booking không có QR tiền thuê đang chờ để hủy",
+      });
+    if (q.body.confirmedNoTransfer !== true)
+      return s.status(400).json({
+        message: "Chỉ hủy QR sau khi đã kiểm tra tài khoản và chưa nhận tiền",
+      });
+    const payment = d.payments.find(
+      (item) =>
+        item.id === booking.balancePaymentId &&
+        item.bookingId === booking.id &&
+        item.ownerId === q.authUser.id &&
+        item.purpose === "rental_balance" &&
+        item.status === "Pending",
+    );
+    if (!payment)
+      return s.status(409).json({
+        message: "Không tìm thấy QR tiền thuê đang chờ hợp lệ",
+      });
+    const cancelledAt = new Date().toISOString();
+    payment.status = "Cancelled";
+    payment.cancelledBy = q.authUser.id;
+    payment.cancelledAt = cancelledAt;
+    booking.balancePaymentStatus = "Unpaid";
+    booking.balancePaymentId = null;
+    d.auditLogs.push({
+      id: nextId(d.auditLogs),
+      entity: "booking",
+      entityId: booking.id,
+      action: "RENTAL_BALANCE_PAYMENT_QR_CANCELLED",
+      actorId: q.authUser.id,
+      detail: payment.transferCode,
+      createdAt: cancelledAt,
+    });
+    d.notifications.push({
+      id: nextId(d.notifications),
+      userId: booking.renterId,
+      title: "Mã QR tiền thuê đã bị hủy",
+      message: `Mã chuyển khoản ${payment.transferCode} đã bị hủy. Không chuyển tiền theo mã này.`,
+      type: "payment",
+      read: false,
+      createdAt: cancelledAt,
+    });
+    write(d);
+    s.json({
+      bookingId: booking.id,
+      balancePaymentStatus: booking.balancePaymentStatus,
+    });
+  },
+);
+app.post(
   "/api/analytics/activity",
   requireRole(["renter", "owner", "admin"]),
   (q, s) => {
@@ -1180,6 +1544,7 @@ app.get("/api/admin/analytics", requireRole(["admin"]), (q, s) => {
     (total, item) => total + item.completedBookings,
     0,
   );
+  const commissions = commissionTotals(data);
   s.json({
     generatedAt: now.toISOString(),
     periodDays: days,
@@ -1193,6 +1558,8 @@ app.get("/api/admin/analytics", requireRole(["admin"]), (q, s) => {
       ),
       activeUsers,
       completedBookings,
+      commissionRevenue: commissions.paid,
+      commissionReceivable: commissions.receivable,
       completedBookingsAllTime: data.bookings.filter(
         (booking) => booking.status === "Completed",
       ).length,
@@ -2828,6 +3195,8 @@ app.post("/api/bookings", bookingLimiter, requireRole(["renter"]), (q, s) => {
     totalPrice: quote.breakdown.totalPrice,
     deposit: quote.breakdown.deposit,
     platformFee: quote.breakdown.platformFee,
+    balancePaymentStatus:
+      quote.breakdown.totalPrice > 0 ? "Unpaid" : "Not Required",
     riskLevel: renter.riskLevel,
     quoteId: quote.id,
     promoCode: quote.promoCode,
@@ -3256,6 +3625,14 @@ app.put(
         source: "booking_acceptance",
       };
     }
+    if (
+      q.body.status === "Ongoing" &&
+      b.balancePaymentStatus &&
+      !["Paid", "Not Required"].includes(b.balancePaymentStatus)
+    )
+      return s.status(409).json({
+        message: "Chủ xe cần xác nhận đã nhận đủ tiền thuê còn lại trước khi bắt đầu chuyến",
+      });
     if (
       q.body.status === "Ongoing" &&
       b.pricingSnapshot?.policyVersion === RENTAL_POLICY_VERSION
@@ -3723,6 +4100,8 @@ app.post("/api/evidence", requireRole(["renter", "owner", "admin"]), (q, s) => {
   if (
     phase === "checkin" &&
     ["Contract Signed", "Ready for Check-in"].includes(booking.status) &&
+    (!booking.balancePaymentStatus ||
+      ["Paid", "Not Required"].includes(booking.balancePaymentStatus)) &&
     (!isCurrentPolicy || evidence.ownerHandoverConfirmation) &&
     (!isCurrentPolicy ||
       (evidence.ownerHandoverConfirmation.identityAndLicenseVerified &&
@@ -4457,6 +4836,7 @@ app.get(
 );
 app.get("/api/dashboard/admin", requireRole(["admin"]), (q, s) => {
   const d = read();
+  const commissions = commissionTotals(d);
   const projectedStatuses = new Set([
       "Accepted",
       "Deposit Required",
@@ -4465,12 +4845,8 @@ app.get("/api/dashboard/admin", requireRole(["admin"]), (q, s) => {
       "Ongoing",
       "Check-out Review",
     ]),
-    revenueSettled = d.bookings
-      .filter((booking) => booking.status === "Completed")
-      .reduce((sum, booking) => sum + Number(booking.platformFee || 0), 0),
-    revenueProjected = d.bookings
-      .filter((booking) => projectedStatuses.has(booking.status))
-      .reduce((sum, booking) => sum + Number(booking.platformFee || 0), 0);
+    revenueSettled = commissions.paid,
+    revenueProjected = commissions.receivable;
   s.json({
     generatedAt: new Date().toISOString(),
     cars: d.cars,
@@ -4486,6 +4862,7 @@ app.get("/api/dashboard/admin", requireRole(["admin"]), (q, s) => {
       revenue: revenueSettled,
       revenueSettled,
       revenueProjected,
+      commissionReceivable: commissions.receivable,
       pendingDisputes: d.disputes.filter((x) => x.status !== "Resolved").length,
       activeBookings: d.bookings.filter((b) =>
         [

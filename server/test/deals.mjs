@@ -171,6 +171,118 @@ try {
     assert.equal((await send("/contracts", "POST", owner, { bookingId: id })).status, 201);
     for (const token of [renter, owner])
       assert.equal((await send(`/contracts/${id}/sign`, "PUT", token, { consent: true })).status, 200);
+    const signedBooking = await request(`/bookings/${id}`, { token: renter });
+    assert.equal(signedBooking.body.status, "Contract Signed");
+    assert.equal(signedBooking.body.balancePaymentStatus, "Unpaid");
+    assert.equal(signedBooking.body.rentalBalanceAmount, signedBooking.body.totalPrice);
+    const prematureStart = await send(`/bookings/${id}/status`, "PUT", owner, {
+      status: "Ongoing",
+    });
+    assert.equal(prematureStart.status, 409);
+    assert.match(prematureStart.body.message, /tiền thuê còn lại/i);
+    assert.equal(
+      (
+        await send(`/bookings/${id}/balance-payment`, "POST", otherRenter)
+      ).status,
+      403,
+    );
+    const balancePayment = await send(
+      `/bookings/${id}/balance-payment`,
+      "POST",
+      renter,
+    );
+    assert.equal(balancePayment.status, 201, json(balancePayment.body));
+    assert.equal(balancePayment.body.balancePaymentStatus, "Pending");
+    assert.equal(balancePayment.body.amount, signedBooking.body.totalPrice);
+    assert.equal(
+      (
+        await send(
+          `/bookings/${id}/balance-payment`,
+          "POST",
+          renter,
+        )
+      ).body.paymentId,
+      balancePayment.body.paymentId,
+      "retries reuse the pending rental payment QR",
+    );
+    if (!balancePaymentCancelCovered) {
+      assert.equal(
+        (
+          await send(
+            `/bookings/${id}/balance-payment/cancel`,
+            "POST",
+            owner,
+            { confirmedNoTransfer: false },
+          )
+        ).status,
+        400,
+      );
+      assert.equal(
+        (
+          await send(
+            `/bookings/${id}/balance-payment/cancel`,
+            "POST",
+            owner,
+            { confirmedNoTransfer: true },
+          )
+        ).status,
+        200,
+      );
+      assert.equal(
+        stored().payments.find(
+          (item) => item.id === balancePayment.body.paymentId,
+        )
+          .status,
+        "Cancelled",
+      );
+      const replacementPayment = await send(
+        `/bookings/${id}/balance-payment`,
+        "POST",
+        renter,
+      );
+      assert.equal(replacementPayment.status, 201);
+      assert.notEqual(
+        replacementPayment.body.transferCode,
+        balancePayment.body.transferCode,
+      );
+      balancePayment.body = replacementPayment.body;
+      balancePaymentCancelCovered = true;
+    }
+    assert.equal(
+      (
+        await send(
+          `/bookings/${id}/balance-payment/confirm`,
+          "POST",
+          unrelatedOwner,
+          { confirmedReceived: true },
+        )
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await send(
+          `/bookings/${id}/balance-payment/confirm`,
+          "POST",
+          owner,
+          { confirmedReceived: false },
+        )
+      ).status,
+      400,
+    );
+    const balanceConfirmation = await send(
+      `/bookings/${id}/balance-payment/confirm`,
+      "POST",
+      owner,
+      { confirmedReceived: true },
+    );
+    assert.equal(balanceConfirmation.status, 200, json(balanceConfirmation.body));
+    assert.equal(balanceConfirmation.body.balancePaymentStatus, "Paid");
+    assert.equal(
+      (await request(`/bookings/${id}`, { token: renter })).body
+        .balancePaymentStatus,
+      "Paid",
+    );
     const form = new FormData();
     form.append("files", new Blob([Buffer.from("89504e470d0a1a0a", "hex")], { type: "image/png" }), "e.png");
     form.append("bookingId", String(id));
@@ -236,6 +348,7 @@ try {
     );
     assert.equal((await send(`/bookings/${id}/status`, "PUT", owner, { status: "Completed" })).status, 200);
   };
+  let balancePaymentCancelCovered = false;
   const stored = () => JSON.parse(fs.readFileSync(dbFile, "utf8"));
 
   // Terms version and quote conditions
@@ -538,6 +651,12 @@ try {
     ),
     true,
   );
+  const dashboardRevenueBefore = (
+    await request("/dashboard/admin", { token: admin })
+  ).body.stats;
+  const analyticsRevenueBefore = (
+    await request("/admin/analytics", { token: admin })
+  ).body.summary;
   const confirmedPayment = await send(
     `/admin/commission-payments/${commissionPayment.body.id}/confirm`,
     "POST",
@@ -545,6 +664,24 @@ try {
   );
   assert.equal(confirmedPayment.status, 200);
   assert.equal(confirmedPayment.body.status, "Paid");
+  const dashboardRevenueAfter = (
+    await request("/dashboard/admin", { token: admin })
+  ).body.stats;
+  const analyticsRevenueAfter = (
+    await request("/admin/analytics", { token: admin })
+  ).body.summary;
+  assert.equal(
+    dashboardRevenueAfter.revenueSettled,
+    dashboardRevenueBefore.revenueSettled + expected.amount,
+  );
+  assert.equal(
+    dashboardRevenueAfter.commissionReceivable,
+    dashboardRevenueBefore.commissionReceivable - expected.amount,
+  );
+  assert.equal(
+    analyticsRevenueAfter.commissionRevenue,
+    analyticsRevenueBefore.commissionRevenue + expected.amount,
+  );
   assert.equal(
     (
       await send(

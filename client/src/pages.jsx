@@ -46,6 +46,7 @@ import {
   DepositRefundPanel,
   PriceConditions,
   PriceConfirmationPanel,
+  RentalBalancePaymentPanel,
   ReportForm,
 } from "./components/DealRecords";
 import DriftScene from "./components/DriftScene";
@@ -3334,7 +3335,7 @@ function LegacyAdminDashboard() {
         />
         <DashboardCard
           icon={Wallet}
-          title="Phí đã ghi nhận"
+          title="Doanh thu hoa hồng đã nhận"
           value={money(data.stats.revenueSettled ?? data.stats.revenue)}
         />
         <DashboardCard
@@ -3547,6 +3548,7 @@ export function Contract() {
       )}
       <PriceConfirmationPanel booking={b} user={user} reload={reload} />
       <DepositRefundPanel booking={b} user={user} reload={reload} />
+      <RentalBalancePaymentPanel booking={b} user={user} reload={reload} />
       {c.renterSigned &&
         c.ownerSigned &&
         ["Contract Signed", "Ready for Check-in"].includes(b.status) && (
@@ -3617,8 +3619,9 @@ export function Contract() {
                 `${dateTime(b.startDate)} – ${dateTime(b.endDate)}`,
                 `Nhận xe: ${b.pickupLocation}`,
                 `Trả xe: ${b.returnLocation}`,
-                `Tổng thanh toán: ${money(b.totalPrice)}`,
+                `Tổng tiền thuê: ${money(b.totalPrice)}`,
                 `Tiền cọc hoàn lại: ${money(b.deposit)}`,
+                `Trạng thái tiền thuê: ${b.balancePaymentStatus === "Paid" ? "Chủ xe đã xác nhận" : b.balancePaymentStatus === "Pending" ? "Chờ chủ xe xác nhận" : b.balancePaymentStatus === "Not Required" ? "Không phát sinh" : b.balancePaymentStatus === "Not Tracked" ? "Booking cũ, chưa theo dõi" : "Chưa thanh toán"}`,
                 `Trạng thái tiền cọc: ${b.paymentStatus === "Paid" ? "Đã xác nhận" : b.paymentStatus === "Pending" ? "Chờ chủ xe xác nhận" : b.paymentStatus === "Unpaid" ? "Chưa thanh toán" : "Chưa áp dụng"}`,
               ]}
             />
@@ -3877,6 +3880,11 @@ export function Evidence() {
         eyebrow={`Booking #${bookingId}`}
         title="Biên bản giao nhận xe"
         desc="Chỉ dữ liệu đã lưu trên backend mới được hiển thị; ảnh có dấu thời gian là căn cứ đối chiếu."
+      />
+      <RentalBalancePaymentPanel
+        booking={booking}
+        user={user}
+        reload={bookingFetch.reload}
       />
       <div className="grid gap-7 lg:grid-cols-2">
         {stages.map((stage) => {

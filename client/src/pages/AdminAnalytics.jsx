@@ -7,8 +7,9 @@ import {
   Eye,
   RefreshCw,
   UserPlus as UserPlusIcon,
+  Wallet,
 } from "lucide-react";
-import { api } from "../services/api";
+import { api, money } from "../services/api";
 import {
   DashboardShell,
   ErrorState,
@@ -166,7 +167,7 @@ export default function AdminAnalytics() {
           </article>
         ))}
       </div>
-      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {[
           {
             title: "Tổng đơn thuê",
@@ -183,6 +184,16 @@ export default function AdminAnalytics() {
             value: summary.publishedCars,
             icon: Car,
           },
+          {
+            title: "Doanh thu hoa hồng đã nhận",
+            value: money(summary.commissionRevenue),
+            icon: Wallet,
+          },
+          {
+            title: "Hoa hồng chờ đối soát",
+            value: money(summary.commissionReceivable),
+            icon: Wallet,
+          },
         ].map(({ title, value, icon: Icon }) => (
           <div className="card flex items-center gap-4 p-4" key={title}>
             <div className="grid size-10 place-items-center rounded-xl bg-slate-100 text-slate-600">
@@ -190,7 +201,9 @@ export default function AdminAnalytics() {
             </div>
             <div>
               <p className="text-xs text-slate-500">{title}</p>
-              <p className="font-bold text-slate-900">{number(value)}</p>
+              <p className="font-bold text-slate-900">
+                {typeof value === "number" ? number(value) : value}
+              </p>
             </div>
           </div>
         ))}
@@ -198,7 +211,8 @@ export default function AdminAnalytics() {
       <p className="mt-4 text-xs leading-5 text-slate-500">
         Lượt xem được ghi nhận từ khi bật tính năng. Người dùng hoạt động là tài
         khoản có phiên sử dụng trong 5 phút gần nhất; dữ liệu này chỉ bắt đầu
-        tích lũy sau khi triển khai.
+        tích lũy sau khi triển khai. Doanh thu chỉ gồm hoa hồng chủ xe đã được
+        admin xác nhận; khoản chờ đối soát chưa được tính vào doanh thu.
       </p>
     </DashboardShell>
   );
