@@ -16,6 +16,7 @@ import {
   FileText,
   Heart,
   BadgePercent,
+  BarChart3,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -733,6 +734,9 @@ export function DashboardShell({ role, children }) {
             )}
             {role === "admin" && (
               <>
+                <NavLink to="/admin/analytics" className={navClass}>
+                  <BarChart3 size={18} /> Biểu đồ
+                </NavLink>
                 <NavLink to="/admin/car-approvals" className={navClass}>
                   <ClipboardCheck size={18} /> Duyệt tin xe
                 </NavLink>

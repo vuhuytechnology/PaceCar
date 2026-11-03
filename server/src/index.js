@@ -82,9 +82,14 @@ const publicUser = (user) =>
   Object.fromEntries(
     Object.entries(user).filter(
       ([key]) =>
-        !["password", "passwordHash", "consents", "emailVerification"].includes(
-          key,
-        ),
+        ![
+          "password",
+          "passwordHash",
+          "consents",
+          "emailVerification",
+          "registeredAt",
+          "lastActiveAt",
+        ].includes(key),
     ),
   );
 const publicOwnerSummary = (user) =>
@@ -156,6 +161,13 @@ const bookingView = (data, booking, viewer) => {
 };
 const nextId = (items) =>
   Math.max(0, ...items.map((item) => Number(item.id) || 0)) + 1;
+const analyticsDateKey = (value) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Date(date.getTime() + 7 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+};
 const sepayQrUrl = ({ bankCode, accountNumber, amount, transferCode }) => {
   const url = new URL("https://vietqr.app/img");
   url.search = new URLSearchParams({
@@ -391,6 +403,13 @@ const bookingLimiter = rateLimit({
   message: {
     message: "Bạn gửi yêu cầu đặt xe quá nhanh, vui lòng thử lại sau",
   },
+});
+const pageViewLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Bạn ghi nhận lượt truy cập quá nhanh" },
 });
 const requiredListingDocuments = ["registration", "insurance"];
 const missingListingDocuments = (car) => {
@@ -837,6 +856,131 @@ const evidencePhaseComplete = (evidence, phase) => {
     Number.isFinite(Number(odometer))
   );
 };
+app.post("/api/analytics/page-view", pageViewLimiter, (q, s) => {
+  const data = read();
+  const now = new Date();
+  const today = analyticsDateKey(now);
+  const oldest = analyticsDateKey(
+    new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000),
+  );
+  data.analytics ||= {};
+  data.analytics.dailyPageViews ||= [];
+  let daily = data.analytics.dailyPageViews.find((item) => item.date === today);
+  if (!daily) {
+    daily = { date: today, count: 0 };
+    data.analytics.dailyPageViews.push(daily);
+  }
+  daily.count += 1;
+  data.analytics.dailyPageViews = data.analytics.dailyPageViews
+    .filter((item) => item.date >= oldest)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  write(data);
+  s.sendStatus(204);
+});
+app.post(
+  "/api/analytics/activity",
+  requireRole(["renter", "owner", "admin"]),
+  (q, s) => {
+    const data = read();
+    const user = find(data.users, q.authUser.id);
+    if (!user) return s.status(404).json({ message: "Không tìm thấy người dùng" });
+    const now = new Date();
+    const lastActive = new Date(user.lastActiveAt || 0).getTime();
+    if (!Number.isFinite(lastActive) || now.getTime() - lastActive >= 60_000) {
+      user.lastActiveAt = now.toISOString();
+      write(data);
+    }
+    s.sendStatus(204);
+  },
+);
+app.get("/api/admin/analytics", requireRole(["admin"]), (q, s) => {
+  const days = q.query.days === undefined ? 30 : Number(q.query.days);
+  if (![7, 30, 90].includes(days))
+    return s.status(400).json({ message: "Khoảng thời gian phải là 7, 30 hoặc 90 ngày" });
+  const data = read();
+  const now = new Date();
+  const dayKeys = Array.from({ length: days }, (_, index) =>
+    analyticsDateKey(
+      new Date(now.getTime() - (days - index - 1) * 24 * 60 * 60 * 1000),
+    ),
+  );
+  const daySet = new Set(dayKeys);
+  const dateCounts = (items, getDate) => {
+    const counts = new Map(dayKeys.map((day) => [day, 0]));
+    for (const item of items) {
+      const day = analyticsDateKey(getDate(item));
+      if (daySet.has(day)) counts.set(day, counts.get(day) + 1);
+    }
+    return counts;
+  };
+  const viewCounts = new Map(
+    (data.analytics?.dailyPageViews || []).map((item) => [
+      item.date,
+      Number(item.count) || 0,
+    ]),
+  );
+  const registrationCounts = dateCounts(
+    data.users,
+    (user) => user.registeredAt || user.createdAt || user.consents?.acceptedAt,
+  );
+  const bookingCounts = dateCounts(data.bookings, (booking) => booking.createdAt);
+  const completedEvents = data.auditLogs.filter(
+    (event) =>
+      event.entity === "booking" &&
+      event.action === "STATUS_CHANGED" &&
+      /(?:→|->)\s*Completed$/.test(event.detail || ""),
+  );
+  const completedCounts = dateCounts(
+    completedEvents,
+    (event) => event.createdAt,
+  );
+  const daily = dayKeys.map((date) => ({
+    date,
+    pageViews: viewCounts.get(date) || 0,
+    registrations: registrationCounts.get(date) || 0,
+    bookings: bookingCounts.get(date) || 0,
+    completedBookings: completedCounts.get(date) || 0,
+  }));
+  const activeCutoff = now.getTime() - 5 * 60 * 1000;
+  const activeUsers = data.users.filter(
+    (user) => new Date(user.lastActiveAt || 0).getTime() >= activeCutoff,
+  ).length;
+  const completedBookings = daily.reduce(
+    (total, item) => total + item.completedBookings,
+    0,
+  );
+  s.json({
+    generatedAt: now.toISOString(),
+    periodDays: days,
+    summary: {
+      pageViews: daily.reduce((total, item) => total + item.pageViews, 0),
+      registrations: daily.reduce(
+        (total, item) => total + item.registrations,
+        0,
+      ),
+      activeUsers,
+      completedBookings,
+      completedBookingsAllTime: data.bookings.filter(
+        (booking) => booking.status === "Completed",
+      ).length,
+      totalBookings: data.bookings.length,
+      activeBookings: data.bookings.filter((booking) =>
+        [
+          "Accepted",
+          "Deposit Required",
+          "Contract Signed",
+          "Ready for Check-in",
+          "Ongoing",
+          "Check-out Review",
+        ].includes(booking.status),
+      ).length,
+      publishedCars: data.cars.filter(
+        (car) => car.listingStatus === "Published",
+      ).length,
+    },
+    daily,
+  });
+});
 app.get("/api/health", (q, s) => s.json({ ok: true, name: "PaceCar API" }));
 app.post(
   "/api/uploads/cars",
@@ -1174,6 +1318,7 @@ app.post("/api/auth/register", registerLimiter, async (q, s) => {
     email,
     phone,
     role,
+    registeredAt: now.toISOString(),
     verified: false,
     trustScore: 50,
     riskLevel: "Medium",

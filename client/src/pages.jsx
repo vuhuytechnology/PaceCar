@@ -2653,7 +2653,7 @@ export function LegalInformation() {
         ],
         [
           "Cách sử dụng dữ liệu",
-          "Thông tin hồ sơ được dùng để vận hành tài khoản, hỗ trợ đặt xe và bảo vệ các giao dịch trong ứng dụng.",
+          "Thông tin hồ sơ được dùng để vận hành tài khoản, hỗ trợ đặt xe và bảo vệ các giao dịch trong ứng dụng. PaceCar ghi nhận tổng lượt xem trang theo ngày và thời điểm hoạt động gần nhất của tài khoản đã đăng nhập để hiển thị thống kê tổng hợp cho quản trị viên.",
         ],
         [
           "Lưu trữ và bảo vệ",

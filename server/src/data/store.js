@@ -141,6 +141,11 @@ function migrateData(data) {
   ];
   data.auditLogs ||= [];
   if (reconcileBookingStatuses(data)) changed = true;
+  data.analytics ||= {};
+  if (!Array.isArray(data.analytics.dailyPageViews)) {
+    data.analytics.dailyPageViews = [];
+    changed = true;
+  }
   data.sessions ||= [];
   const storedSessionCount = data.sessions.length;
   const activeSessions = data.sessions

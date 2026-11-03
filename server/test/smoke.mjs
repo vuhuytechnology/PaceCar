@@ -88,6 +88,38 @@ try {
   const owner = await login("owner@pacecar.vn");
   const unrelatedOwner = await login("tung@pacecar.vn");
   const admin = await login("admin@pacecar.vn");
+  assert.equal(
+    (await request("/admin/analytics", { token: owner })).status,
+    403,
+  );
+  assert.equal(
+    (await request("/analytics/activity", { method: "POST" })).status,
+    401,
+  );
+  const pageViewEvents = await Promise.all([
+    request("/analytics/page-view", { method: "POST" }),
+    request("/analytics/page-view", { method: "POST" }),
+  ]);
+  assert.ok(pageViewEvents.every((response) => response.status === 204));
+  assert.equal(
+    (await request("/analytics/activity", { method: "POST", token: owner }))
+      .status,
+    204,
+  );
+  const activeOwnerProfile = await request("/users/4", { token: owner });
+  assert.equal(activeOwnerProfile.status, 200);
+  assert.equal("lastActiveAt" in activeOwnerProfile.body, false);
+  const initialAnalytics = await request("/admin/analytics?days=7", {
+    token: admin,
+  });
+  assert.equal(initialAnalytics.status, 200);
+  assert.equal(initialAnalytics.body.daily.length, 7);
+  assert.equal(initialAnalytics.body.summary.pageViews, 2);
+  assert.ok(initialAnalytics.body.summary.activeUsers >= 1);
+  assert.equal(
+    (await request("/admin/analytics?days=14", { token: admin })).status,
+    400,
+  );
   const seededDemoListings = await request(
     "/admin/car-listings?status=Pending Review",
     { token: admin },
@@ -317,6 +349,12 @@ try {
   assert.equal(registeredOwner.body.role, "owner");
   assert.equal(registeredOwner.body.verified, false);
   assert.equal("token" in registeredOwner.body, true);
+  assert.equal("registeredAt" in registeredOwner.body, false);
+  const registrationAnalytics = await request("/admin/analytics?days=7", {
+    token: admin,
+  });
+  assert.equal(registrationAnalytics.status, 200);
+  assert.ok(registrationAnalytics.body.summary.registrations >= 2);
 
   const loggedOutRegistration = await request("/auth/logout", {
     method: "POST",
@@ -925,6 +963,14 @@ try {
     },
   );
   assert.equal(completedJourney.status, 200);
+  const completedAnalytics = await request("/admin/analytics?days=7", {
+    token: admin,
+  });
+  assert.equal(completedAnalytics.status, 200);
+  assert.ok(completedAnalytics.body.summary.completedBookings >= 1);
+  assert.ok(
+    completedAnalytics.body.daily.some((item) => item.completedBookings > 0),
+  );
   const journeyReview = await request("/reviews", {
     method: "POST",
     token: renter,

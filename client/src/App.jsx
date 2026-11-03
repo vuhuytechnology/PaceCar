@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { ToastProvider, Layout } from "./components/UI";
 import { useAuth } from "./auth/AuthContext";
+import AdminAnalytics from "./pages/AdminAnalytics";
 import {
   FavoritesPage,
   MyBookings,
@@ -32,6 +33,48 @@ import {
   Dispute,
   NotFound,
 } from "./pages";
+function AnalyticsTracker() {
+  const location = useLocation();
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (document.visibilityState !== "visible") return;
+    fetch("/api/analytics/page-view", { method: "POST", keepalive: true }).then(
+      (response) => {
+        if (!response.ok)
+          console.warn("Could not record page view:", response.status);
+      },
+    ).catch((error) => console.warn("Could not record page view:", error));
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!user) return;
+    const recordActivity = () => {
+      if (document.visibilityState !== "visible") return;
+      const token = localStorage.getItem("pacecar-token");
+      if (!token) return;
+      fetch("/api/analytics/activity", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        keepalive: true,
+      }).then((response) => {
+        if (!response.ok && response.status !== 401)
+          console.warn("Could not record user activity:", response.status);
+      }).catch((error) =>
+        console.warn("Could not record user activity:", error),
+      );
+    };
+    recordActivity();
+    const interval = window.setInterval(recordActivity, 60_000);
+    document.addEventListener("visibilitychange", recordActivity);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", recordActivity);
+    };
+  }, [user?.id]);
+
+  return null;
+}
 function RequireRole({ role, children }) {
   const { user } = useAuth();
   const location = useLocation();
@@ -50,6 +93,7 @@ export default function App() {
   return (
     <ToastProvider>
       <Layout>
+        <AnalyticsTracker />
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/help" element={<HelpCenter />} />
@@ -130,6 +174,14 @@ export default function App() {
             element={
               <RequireRole role="admin">
                 <AdminPromotions />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/admin/analytics"
+            element={
+              <RequireRole role="admin">
+                <AdminAnalytics />
               </RequireRole>
             }
           />
