@@ -1487,6 +1487,10 @@ export function CarDetail() {
             <img
               src={photoSrc}
               alt={`${car.name} - ảnh ${Math.min(photo, photos.length - 1) + 1}`}
+              onError={(event) => {
+                event.currentTarget.onerror = null;
+                event.currentTarget.src = "/images/home-hero.jpg";
+              }}
               className="h-full w-full object-contain"
             />
           </div>
@@ -1501,7 +1505,15 @@ export function CarDetail() {
                   aria-pressed={i === photo}
                   className={`h-16 w-24 shrink-0 overflow-hidden rounded-[2px] border-[0.8px] bg-[#f3f4f6] ${i === photo ? "border-pace-blue ring-2 ring-pace-blue/30" : "border-pace-line"}`}
                 >
-                  <img src={src} alt="" className="h-full w-full object-contain" />
+                  <img
+                    src={src}
+                    alt=""
+                    onError={(event) => {
+                      event.currentTarget.onerror = null;
+                      event.currentTarget.src = "/images/home-hero.jpg";
+                    }}
+                    className="h-full w-full object-contain"
+                  />
                 </button>
               ))}
             </div>
@@ -4190,7 +4202,9 @@ export function Dispute() {
     [files, setFiles] = useState([]),
     [submitting, setSubmitting] = useState(false),
     [adminDecision, setAdminDecision] = useState(null),
-    [adminSaving, setAdminSaving] = useState(false);
+    [adminSaving, setAdminSaving] = useState(false),
+    [adminFiles, setAdminFiles] = useState([]),
+    [supplementalSaving, setSupplementalSaving] = useState(false);
   async function submit(e) {
     e.preventDefault();
     if (!files.length) {
@@ -4302,6 +4316,28 @@ export function Dispute() {
       toast(actionError.message);
     } finally {
       setAdminSaving(false);
+    }
+  }
+  async function uploadSupplementalEvidence() {
+    if (!adminFiles.length) {
+      toast("Vui lòng chọn ảnh bằng chứng cần bổ sung");
+      return;
+    }
+    const form = new FormData();
+    for (const file of adminFiles) form.append("files", file);
+    setSupplementalSaving(true);
+    try {
+      await api(`/disputes/${existing.id}/evidence`, {
+        method: "POST",
+        body: form,
+      });
+      setAdminFiles([]);
+      toast("Đã tải và lưu ảnh bằng chứng bổ sung");
+      disputesFetch.reload();
+    } catch (uploadError) {
+      toast(uploadError.message);
+    } finally {
+      setSupplementalSaving(false);
     }
   }
   return (
@@ -4446,6 +4482,39 @@ export function Dispute() {
                 </p>
               ) : existing ? (
                 <>
+                  <label className="block rounded-xl border border-dashed border-brand-300 bg-brand-50 p-4 text-sm text-brand-700">
+                    <b>Bổ sung ảnh bằng chứng</b>
+                    <span className="mt-1 block text-xs">
+                      Ảnh mới được thêm vào lịch sử, không ghi đè bằng chứng cũ.
+                      Tối đa 6 ảnh mỗi lần.
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
+                      multiple
+                      className="mt-3 block w-full text-xs"
+                      onChange={(event) =>
+                        setAdminFiles(
+                          Array.from(event.target.files || []).slice(0, 6),
+                        )
+                      }
+                    />
+                    {adminFiles.length > 0 && (
+                      <span className="mt-2 block text-xs font-semibold">
+                        Đã chọn {adminFiles.length} ảnh
+                      </span>
+                    )}
+                  </label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={supplementalSaving || !adminFiles.length}
+                    onClick={uploadSupplementalEvidence}
+                  >
+                    {supplementalSaving
+                      ? "Đang tải ảnh..."
+                      : "Tải ảnh bằng chứng bổ sung"}
+                  </Button>
                   <Field label="Quyết định xử lý">
                     <textarea
                       className="input"

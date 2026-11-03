@@ -10,8 +10,10 @@ import crypto from "node:crypto";
 import {
   flushWrites,
   initializeStore,
+  persistCarPhotoBlobs,
   persistEvidenceBlobs,
   read,
+  readCarPhotoBlob,
   readEvidenceBlob,
   write,
 } from "./data/store.js";
@@ -85,10 +87,27 @@ fs.mkdirSync(uploadDir, { recursive: true });
 fs.mkdirSync(documentDir, { recursive: true });
 fs.mkdirSync(evidenceDir, { recursive: true });
 await initializeStore();
-app.use(
-  "/api/uploads/files",
-  express.static(uploadDir, { fallthrough: false, maxAge: "7d" }),
-);
+app.get("/api/uploads/files/:filename", async (req, res, next) => {
+  const { filename } = req.params;
+  if (!/^[\w.-]+$/.test(filename) || filename.includes(".."))
+    return res.status(404).json({ message: "Không tìm thấy ảnh xe" });
+  try {
+    const storedPhoto = await readCarPhotoBlob(filename);
+    if (storedPhoto) {
+      res.set("Cache-Control", "public, max-age=604800, immutable");
+      return res.type(storedPhoto.mimeType).send(storedPhoto.content);
+    }
+    const filePath = path.join(uploadDir, filename);
+    if (!fs.existsSync(filePath))
+      return res.status(404).json({
+        message: "Ảnh xe không còn trên máy chủ. Chủ xe cần tải lại ảnh.",
+      });
+    res.set("Cache-Control", "public, max-age=604800, immutable");
+    res.sendFile(filePath);
+  } catch (error) {
+    next(error);
+  }
+});
 const find = (arr, id) => arr.find((x) => x.id === Number(id));
 const publicUser = (user) =>
   user &&
@@ -174,6 +193,14 @@ const bookingView = (data, booking, viewer) => {
 };
 const nextId = (items) =>
   Math.max(0, ...items.map((item) => Number(item.id) || 0)) + 1;
+let lastReservedUploadId = 0;
+const reserveUploadIds = (data, count) => {
+  lastReservedUploadId = Math.max(
+    lastReservedUploadId,
+    nextId(data.uploadedAssets) - 1,
+  );
+  return Array.from({ length: count }, () => ++lastReservedUploadId);
+};
 const createCommissionReceivable = (data, booking, actorId) => {
   data.commissions ||= [];
   if (data.commissions.some((item) => item.bookingId === booking.id))
@@ -1193,9 +1220,33 @@ app.post(
   uploadLimiter,
   requireRole(["owner", "admin"]),
   carUpload.array("files", 10),
-  (req, res) => {
+  async (req, res) => {
     if (!req.files?.length)
       return res.status(400).json({ message: "Vui lòng chọn ít nhất một ảnh" });
+    try {
+      await persistCarPhotoBlobs(
+        req.files.map((file) => ({
+          filename: file.filename,
+          mimeType: file.mimetype,
+          path: file.path,
+        })),
+      );
+    } catch (error) {
+      for (const file of req.files) {
+        try {
+          fs.unlinkSync(file.path);
+        } catch (cleanupError) {
+          console.error(
+            "Could not remove temporary car photo:",
+            cleanupError.message,
+          );
+        }
+      }
+      console.error("Could not persist car photos:", error.message);
+      return res.status(503).json({
+        message: "Không thể lưu ảnh xe. Vui lòng thử lại sau.",
+      });
+    }
     res.status(201).json({
       files: req.files.map((file) => ({
         name: file.originalname,
@@ -1273,8 +1324,9 @@ app.post(
     }
     if (!req.files?.length)
       return res.status(400).json({ message: "Vui lòng chọn ít nhất một ảnh" });
-    const assets = req.files.map((file) => ({
-        id: nextId(data.uploadedAssets),
+    const assetIds = reserveUploadIds(data, req.files.length);
+    const assets = req.files.map((file, index) => ({
+        id: assetIds[index],
         kind: "evidence",
         bookingId: booking.id,
         uploaderId: req.authUser.id,
@@ -1285,13 +1337,14 @@ app.post(
         createdAt: new Date().toISOString(),
       }));
     try {
-      await persistEvidenceBlobs(
+        const persistence = persistEvidenceBlobs(
         assets.map((asset, index) => ({
           id: asset.id,
           mimeType: asset.mimeType,
           path: req.files[index].path,
         })),
       );
+        if (persistence) await persistence;
     } catch (error) {
       removeUploadedFiles();
       console.error("Could not persist evidence images:", error.message);
@@ -3829,6 +3882,118 @@ app.post("/api/disputes", requireRole(["renter", "owner", "admin"]), (q, s) => {
   write(d);
   s.status(201).json(x);
 });
+app.post(
+  "/api/disputes/:id/evidence",
+  uploadLimiter,
+  requireRole(["admin"]),
+  evidenceUpload.array("files", 6),
+  async (req, res) => {
+    const removeUploadedFiles = () => {
+      for (const file of req.files || []) {
+        try {
+          fs.unlinkSync(file.path);
+        } catch (error) {
+          console.error(
+            "Could not remove temporary supplemental evidence:",
+            error.message,
+          );
+        }
+      }
+    };
+    const d = read(),
+      dispute = find(d.disputes, req.params.id);
+    if (!dispute) {
+      removeUploadedFiles();
+      return res.status(404).json({ message: "Không tìm thấy tranh chấp" });
+    }
+    if (dispute.status === "Resolved") {
+      removeUploadedFiles();
+      return res
+        .status(409)
+        .json({ message: "Không thể bổ sung ảnh cho tranh chấp đã giải quyết" });
+    }
+    const booking = find(d.bookings, dispute.bookingId);
+    if (!booking) {
+      removeUploadedFiles();
+      return res
+        .status(409)
+        .json({ message: "Booking của tranh chấp không còn tồn tại" });
+    }
+    if (!req.files?.length)
+      return res.status(400).json({ message: "Vui lòng chọn ít nhất một ảnh" });
+    const existingEvidence = Array.isArray(dispute.evidence)
+      ? dispute.evidence
+      : [];
+    if (existingEvidence.length + req.files.length > 12) {
+      removeUploadedFiles();
+      return res.status(400).json({
+        message: "Mỗi tranh chấp chỉ được đính kèm tối đa 12 ảnh",
+      });
+    }
+    const assetIds = reserveUploadIds(d, req.files.length);
+    const assets = req.files.map((file, index) => ({
+      id: assetIds[index],
+      kind: "evidence",
+      bookingId: booking.id,
+      uploaderId: req.authUser.id,
+      filename: file.filename,
+      originalName: file.originalname,
+      mimeType: file.mimetype,
+      size: file.size,
+      supplemental: true,
+      createdAt: new Date().toISOString(),
+    }));
+    try {
+      const persistence = persistEvidenceBlobs(
+        assets.map((asset, index) => ({
+          id: asset.id,
+          mimeType: asset.mimeType,
+          path: req.files[index].path,
+        })),
+      );
+      if (persistence) await persistence;
+    } catch (error) {
+      removeUploadedFiles();
+      console.error("Could not persist supplemental evidence:", error.message);
+      return res.status(503).json({
+        message: "Không thể lưu ảnh bằng chứng. Vui lòng thử lại sau.",
+      });
+    }
+    const now = new Date().toISOString();
+    d.uploadedAssets.push(...assets);
+    dispute.evidence = [...existingEvidence, ...assets.map((asset) => asset.id)];
+    dispute.updatedAt = now;
+    d.auditLogs.push({
+      id: nextId(d.auditLogs),
+      entity: "dispute",
+      entityId: dispute.id,
+      action: "EVIDENCE_ADDED",
+      actorId: req.authUser.id,
+      detail: `${assets.length} supplemental photos`,
+      createdAt: now,
+    });
+    for (const userId of new Set([booking.renterId, booking.ownerId]))
+      d.notifications.push({
+        id: nextId(d.notifications),
+        userId,
+        title: "Bằng chứng bổ sung",
+        message: `Admin đã bổ sung ảnh cho tranh chấp #${dispute.id} của Booking #PC${booking.id}.`,
+        type: "dispute",
+        read: false,
+        createdAt: now,
+      });
+    write(d);
+    res.status(201).json({
+      dispute,
+      files: assets.map((asset) => ({
+        id: asset.id,
+        url: `/api/evidence-assets/${asset.id}`,
+        name: asset.originalName,
+        type: asset.mimeType,
+      })),
+    });
+  },
+);
 app.put("/api/disputes/:id/status", requireRole(["admin"]), (q, s) => {
   const d = read(),
     x = find(d.disputes, q.params.id);

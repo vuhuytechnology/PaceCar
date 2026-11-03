@@ -479,6 +479,14 @@ async function ensureSchema() {
       created_at timestamptz NOT NULL DEFAULT now()
     )
   `);
+  await getPool().query(`
+    CREATE TABLE IF NOT EXISTS pacecar_car_photo_blobs (
+      filename text PRIMARY KEY,
+      mime_type text NOT NULL,
+      content bytea NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
 }
 
 async function saveDocument(data) {
@@ -582,8 +590,12 @@ export async function flushWrites() {
     });
 }
 
-export async function persistEvidenceBlobs(assets) {
-  if (!postgresEnabled) return;
+export function persistEvidenceBlobs(assets) {
+  if (!postgresEnabled) return null;
+  return persistEvidenceBlobsToPostgres(assets);
+}
+
+async function persistEvidenceBlobsToPostgres(assets) {
   const client = await getPool().connect();
   let transactionStarted = false;
   try {
@@ -626,6 +638,52 @@ export async function readEvidenceBlob(id) {
   );
   const asset = result.rows[0];
   return asset ? { mimeType: asset.mime_type, content: asset.content } : null;
+}
+
+export async function persistCarPhotoBlobs(files) {
+  if (!postgresEnabled) return;
+  const client = await getPool().connect();
+  let transactionStarted = false;
+  try {
+    await client.query("BEGIN");
+    transactionStarted = true;
+    for (const file of files) {
+      const content = await fs.promises.readFile(file.path);
+      await client.query(
+        `INSERT INTO pacecar_car_photo_blobs (filename, mime_type, content)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (filename) DO UPDATE
+         SET mime_type = EXCLUDED.mime_type, content = EXCLUDED.content`,
+        [file.filename, file.mimeType, content],
+      );
+    }
+    await client.query("COMMIT");
+    transactionStarted = false;
+  } catch (error) {
+    if (transactionStarted) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        console.error(
+          "Could not roll back car photo storage:",
+          rollbackError.message,
+        );
+      }
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function readCarPhotoBlob(filename) {
+  if (!postgresEnabled) return null;
+  const result = await getPool().query(
+    "SELECT mime_type, content FROM pacecar_car_photo_blobs WHERE filename = $1",
+    [filename],
+  );
+  const photo = result.rows[0];
+  return photo ? { mimeType: photo.mime_type, content: photo.content } : null;
 }
 
 export async function importJsonFileToPostgres(jsonFile) {

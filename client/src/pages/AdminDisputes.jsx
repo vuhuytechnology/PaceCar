@@ -184,6 +184,12 @@ export default function AdminDisputes() {
                         >
                           Xem hồ sơ giao nhận
                         </Link>
+                        <Link
+                          to={`/disputes/${booking.id}`}
+                          className="font-semibold text-brand-700 hover:underline sm:col-span-2"
+                        >
+                          Mở trang booking để bổ sung ảnh / xử lý
+                        </Link>
                       </div>
                     )}
 

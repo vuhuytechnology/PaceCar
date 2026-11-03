@@ -1184,6 +1184,13 @@ try {
     new Blob([Buffer.from("89504e470d0a1a0a", "hex")], { type: "image/png" }),
     "checkout.png",
   );
+  evidenceUpload.append(
+    "files",
+    new Blob([Buffer.from("89504e470d0a1a0a01", "hex")], {
+      type: "image/png",
+    }),
+    "checkout-extra.png",
+  );
   evidenceUpload.append("bookingId", "6");
   const uploadedEvidence = await request("/uploads/evidence", {
     method: "POST",
@@ -1195,6 +1202,11 @@ try {
     201,
     JSON.stringify(uploadedEvidence.body),
   );
+  assert.equal(uploadedEvidence.body.files.length, 2);
+  assert.equal(
+    new Set(uploadedEvidence.body.files.map((file) => file.id)).size,
+    2,
+  );
   const evidenceImage = await fetch(
     `${base}/evidence-assets/${uploadedEvidence.body.files[0].id}`,
     { headers: { Authorization: `Bearer ${renter}` } },
@@ -1204,6 +1216,15 @@ try {
   assert.deepEqual(
     Buffer.from(await evidenceImage.arrayBuffer()),
     Buffer.from("89504e470d0a1a0a", "hex"),
+  );
+  const secondEvidenceImage = await fetch(
+    `${base}/evidence-assets/${uploadedEvidence.body.files[1].id}`,
+    { headers: { Authorization: `Bearer ${renter}` } },
+  );
+  assert.equal(secondEvidenceImage.status, 200);
+  assert.deepEqual(
+    Buffer.from(await secondEvidenceImage.arrayBuffer()),
+    Buffer.from("89504e470d0a1a0a01", "hex"),
   );
   const checkoutEvidence = await request("/evidence", {
     method: "POST",
@@ -1232,6 +1253,43 @@ try {
   const adminDisputes = await request("/disputes", { token: admin });
   assert.ok(
     adminDisputes.body.some((dispute) => dispute.id === openedDispute.body.id),
+  );
+  const supplementalUpload = new FormData();
+  for (const [name, content] of [
+    ["extra-1.png", "89504e470d0a1a0a02"],
+    ["extra-2.png", "89504e470d0a1a0a03"],
+  ])
+    supplementalUpload.append(
+      "files",
+      new Blob([Buffer.from(content, "hex")], { type: "image/png" }),
+      name,
+    );
+  const supplementalEvidence = await request(
+    `/disputes/${openedDispute.body.id}/evidence`,
+    {
+      method: "POST",
+      token: admin,
+      body: supplementalUpload,
+    },
+  );
+  assert.equal(
+    supplementalEvidence.status,
+    201,
+    JSON.stringify(supplementalEvidence.body),
+  );
+  assert.equal(supplementalEvidence.body.dispute.evidence.length, 3);
+  assert.equal(
+    new Set(supplementalEvidence.body.files.map((file) => file.id)).size,
+    2,
+  );
+  const supplementalImage = await fetch(
+    `${base}/evidence-assets/${supplementalEvidence.body.files[1].id}`,
+    { headers: { Authorization: `Bearer ${admin}` } },
+  );
+  assert.equal(supplementalImage.status, 200);
+  assert.deepEqual(
+    Buffer.from(await supplementalImage.arrayBuffer()),
+    Buffer.from("89504e470d0a1a0a03", "hex"),
   );
   const reviewedDispute = await request(
     `/disputes/${openedDispute.body.id}/status`,
@@ -1289,6 +1347,15 @@ try {
     body: uploadedCarPhotos,
   });
   assert.equal(carPhotos.status, 201, JSON.stringify(carPhotos.body));
+  const carPhoto = await fetch(
+    new URL(carPhotos.body.files[0].url, base),
+  );
+  assert.equal(carPhoto.status, 200);
+  assert.match(carPhoto.headers.get("content-type"), /^image\/png/);
+  assert.deepEqual(
+    Buffer.from(await carPhoto.arrayBuffer()),
+    Buffer.from("89504e470d0a1a0a", "hex"),
+  );
   const qaListing = {
     name: "QA Test Car 2026",
     brand: "QA",

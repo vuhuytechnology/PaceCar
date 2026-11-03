@@ -28,6 +28,10 @@ export default function FeaturedCarCard({
           }
           alt={car.name ? `Xe ${car.name}` : "Xe cho thuê trên PaceCar"}
           loading="lazy"
+          onError={(event) => {
+            event.currentTarget.onerror = null;
+            event.currentTarget.src = "/images/home-hero.jpg";
+          }}
           className="h-full w-full object-cover"
         />
         {(car.verified || car.demoOnly || badges.length > 0) && (

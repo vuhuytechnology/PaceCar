@@ -151,6 +151,10 @@ export function CarCard({ car, onRemoveFavorite, removing = false }) {
           }
           alt={car.name ? `Xe ${car.name}` : "Xe cho thuê trên PaceCar"}
           loading="lazy"
+          onError={(event) => {
+            event.currentTarget.onerror = null;
+            event.currentTarget.src = "/images/home-hero.jpg";
+          }}
           className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
         />
         {car.verified && (

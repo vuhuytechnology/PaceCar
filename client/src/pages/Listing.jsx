@@ -860,6 +860,10 @@ export function CarListingWizard() {
                       src={src}
                       alt={`${form.name || "Xe"} - ảnh ${i + 1}`}
                       loading="lazy"
+                      onError={(event) => {
+                        event.currentTarget.onerror = null;
+                        event.currentTarget.src = "/images/home-hero.jpg";
+                      }}
                       className="h-28 w-full rounded-xl object-cover"
                     />
                     {i === 0 && (
