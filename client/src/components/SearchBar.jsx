@@ -231,7 +231,7 @@ export default function SearchBar({ compact = false }) {
     startTime: params.get("startTime") || "08:00",
     endDate: params.get("endDate") || isoDate(3),
     endTime: params.get("endTime") || "20:00",
-    driverOption: params.get("driverOption") || "self",
+    driverOption: params.get("driverOption") || "all",
   });
   const [form, setForm] = useState(valuesFromParams);
   const [picker, setPicker] = useState(null);
@@ -347,6 +347,7 @@ export default function SearchBar({ compact = false }) {
         aria-label="Hình thức thuê xe"
       >
         {[
+          ["all", "Tất cả"],
           ["self", "Tự lái"],
           ["driver", "Có tài xế"],
         ].map(([value, label]) => (

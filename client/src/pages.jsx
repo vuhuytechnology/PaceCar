@@ -1299,6 +1299,13 @@ export function CarDetail() {
     setQuoteError("");
     if (!preserveOnError) setQuote(null);
     try {
+      const requestedDriverOption = params.get("driverOption");
+      const driverOption =
+        requestedDriverOption === "self" || requestedDriverOption === "driver"
+          ? requestedDriverOption
+          : car.selfDriveAvailable
+            ? "self"
+            : "driver";
       const result = await api("/quotes", {
         method: "POST",
         body: JSON.stringify({
@@ -1307,7 +1314,7 @@ export function CarDetail() {
           startTime,
           endDate,
           endTime,
-          driverOption: params.get("driverOption") || "self",
+          driverOption,
           pickupOption,
           pickupLocation: car.handoverPoint || car.location,
           returnLocation: car.handoverPoint || car.location,
