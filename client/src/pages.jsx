@@ -1429,11 +1429,11 @@ export function CarDetail() {
           </div>
         </div>
         <div className="mx-auto max-w-7xl">
-          <div className="h-[260px] overflow-clip rounded-[3px] bg-[#ddd] sm:h-[500px]">
+          <div className="h-[260px] overflow-clip rounded-[3px] bg-[#f3f4f6] sm:h-[500px]">
             <img
               src={photoSrc}
               alt={`${car.name} - ảnh ${Math.min(photo, photos.length - 1) + 1}`}
-              className="h-full w-full object-cover"
+              className="h-full w-full object-contain"
             />
           </div>
           {photos.length > 1 && (
@@ -1445,9 +1445,9 @@ export function CarDetail() {
                   onClick={() => setPhoto(i)}
                   aria-label={`Xem ảnh ${i + 1}`}
                   aria-pressed={i === photo}
-                  className={`h-16 w-24 shrink-0 overflow-hidden rounded-[2px] border-[0.8px] ${i === photo ? "border-pace-blue ring-2 ring-pace-blue/30" : "border-pace-line"}`}
+                  className={`h-16 w-24 shrink-0 overflow-hidden rounded-[2px] border-[0.8px] bg-[#f3f4f6] ${i === photo ? "border-pace-blue ring-2 ring-pace-blue/30" : "border-pace-line"}`}
                 >
-                  <img src={src} alt="" className="h-full w-full object-cover" />
+                  <img src={src} alt="" className="h-full w-full object-contain" />
                 </button>
               ))}
             </div>
