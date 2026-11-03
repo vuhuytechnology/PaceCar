@@ -26,9 +26,9 @@ export const RENTAL_POLICY_DEFAULTS = {
   longRentalDiscounts: [{ minDays: 5, rate: 0.05 }],
 };
 
-// Commission: proposal only. Tiers apply one rate to the whole base (not
-// progressive). Rates are in basis points to keep the math in integers.
-export const COMMISSION_POLICY_VERSION = "PC-COMM-2026.0-PROPOSED";
+// Tiers apply one rate to the whole base (not progressive). Rates are in basis
+// points to keep the math in integers.
+export const COMMISSION_POLICY_VERSION = "PC-COMM-2026.1";
 export const COMMISSION_TIERS = [
   { minInclusive: 0, maxExclusive: 1_000_000, rateBps: 500 },
   { minInclusive: 1_000_000, maxExclusive: 2_000_000, rateBps: 400 },
@@ -36,12 +36,9 @@ export const COMMISSION_TIERS = [
 ];
 export const COMMISSION_ROUNDING = "half-up-vnd";
 export const COMMISSION_BASIS = "baseRental";
-// Not confirmed by the business: which booking statuses count as "successful".
+// A commission becomes payable when a booking first transitions to Completed.
 export const COMMISSION_ELIGIBLE_STATUSES = ["Completed"];
 const MAX_BASE = 1_000_000_000_000;
-
-export const commissionTrialEnabled = () =>
-  String(process.env.COMMISSION_TRIAL_ENABLED || "").toLowerCase() === "true";
 
 export function commissionFor(baseAmount) {
   if (

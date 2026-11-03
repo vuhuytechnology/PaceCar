@@ -201,8 +201,8 @@ export function Landing() {
     ],
     [
       Wallet,
-      "Phí nền tảng minh bạch",
-      "Người thuê trả phí nền tảng 10% trên tiền thuê sau điều chỉnh; toàn bộ được tách dòng trong báo giá.",
+      "Hoa hồng chủ xe minh bạch",
+      "Chủ xe thanh toán hoa hồng theo chính sách PaceCar; khoản này không cộng vào báo giá của người thuê.",
     ],
     [
       Camera,
@@ -255,7 +255,7 @@ export function Landing() {
           <div className="max-w-[900px] space-y-4 text-white">
             {[
               "Hợp đồng giữa hai bên",
-              "Phí nền tảng minh bạch",
+              "Hoa hồng chủ xe minh bạch",
               "Hỗ trợ bằng chứng",
             ].map((label) => (
               <div key={label} className="flex items-center gap-3 text-[15px] font-bold leading-[24px] text-white/95">
@@ -1108,7 +1108,7 @@ function LegacyCarDetail() {
   const { data: reviews } = useFetch("/reviews?carId=" + id);
   if (!c) return <Load />;
   const rental = c.pricePerDay * 3,
-    fee = Math.round(rental * 0.1);
+    fee = 0;
   return (
     <div className="container-app py-10">
       <div className="grid gap-4 md:grid-cols-4">
@@ -1717,9 +1717,9 @@ export function CarDetail() {
                   )}
                 </div>
                 <p className="text-xs leading-[15px] text-pace-muted">
-                  Giá thuê do chủ xe niêm yết. Phí nền tảng, bảo hiểm, giao xe và
-                  phụ phí ngoài giờ chỉ được cộng sau khi bạn chọn lịch và đều hiển
-                  thị riêng trong báo giá.
+                  Giá thuê do chủ xe niêm yết. Bảo hiểm, giao xe và phụ phí
+                  ngoài giờ chỉ được cộng sau khi bạn chọn lịch và hiển thị
+                  riêng trong báo giá.
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-[7px]">
@@ -1872,7 +1872,12 @@ export function CarDetail() {
                   {quote.driverFee > 0 && (
                     <QuoteRow label="Phí tài xế" value={quote.driverFee} />
                   )}
-                  <QuoteRow label="Phí nền tảng" value={quote.platformFee} />
+                  {quote.platformFee > 0 && (
+                    <QuoteRow
+                      label="Phí nền tảng"
+                      value={quote.platformFee}
+                    />
+                  )}
                   {quote.outsideHoursFee > 0 && (
                     <QuoteRow
                       label="Phụ phí bàn giao ngoài giờ"
@@ -2785,7 +2790,7 @@ export function LegalInformation() {
         ],
         [
           "Giá, tiền cọc và thanh toán",
-          "Chủ xe niêm yết giá thuê và tiền cọc. Báo giá hiển thị riêng giá thuê cơ bản, phụ phí, giảm giá, tổng phí thuê và tiền cọc, kèm điều kiện kilomet, nhiên liệu, hủy và hoàn cọc do chủ xe công bố (nếu có) và thời hạn hiệu lực của báo giá. Điều kiện chủ xe chưa công bố sẽ được hiển thị là chưa công bố. Người thuê trả phí nền tảng 10% trên tiền thuê sau điều chỉnh, cùng các khoản bảo hiểm, giao xe, tài xế hoặc ngoài giờ nếu phát sinh; các khoản này hiện hành trong bản đang vận hành và đang chờ đơn vị vận hành xác nhận.",
+          "Chủ xe niêm yết giá thuê và tiền cọc. Báo giá hiển thị riêng giá thuê cơ bản, phụ phí, giảm giá, tổng phí thuê và tiền cọc, kèm điều kiện kilomet, nhiên liệu, hủy và hoàn cọc do chủ xe công bố (nếu có) và thời hạn hiệu lực của báo giá. Điều kiện chủ xe chưa công bố sẽ được hiển thị là chưa công bố. Hoa hồng nền tảng do chủ xe thanh toán riêng sau khi chuyến thuê hoàn tất; khoản này không được cộng vào báo giá của người thuê.",
         ],
         [
           "Phản ánh và giải quyết tranh chấp",
@@ -2843,7 +2848,7 @@ function LegacyBooking() {
       Math.ceil((new Date(f.endDate) - new Date(f.startDate)) / 86400000),
     ),
     rental = days * c.pricePerDay,
-    fee = Math.round(rental * 0.1),
+    fee = 0,
     total = rental + fee;
   async function submit(e) {
     e.preventDefault();
@@ -3393,7 +3398,12 @@ function LegacyAdminDashboard() {
             ))}
           </div>
           <div className="card p-5">
-            <h3 className="font-bold">Tranh chấp</h3>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="font-bold">Tranh chấp</h3>
+              <Button as={Link} to="/admin/disputes" variant="outline">
+                Mở trung tâm
+              </Button>
+            </div>
             {data.disputes.map((d) => (
               <div className="mt-4 flex justify-between text-sm" key={d.id}>
                 <span>
@@ -4108,15 +4118,24 @@ function AuthorizedEvidenceImage({ asset, alt }) {
     source =
       typeof asset === "object" ? asset.url : `/api/evidence-assets/${id}`;
   const [url, setUrl] = useState("");
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
     let active = true,
       objectUrl = "";
+    setUrl("");
+    setError("");
     const token = localStorage.getItem("pacecar-token");
     fetch(source, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
-      .then((response) => {
-        if (!response.ok) throw new Error("Không tải được ảnh");
+      .then(async (response) => {
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          throw new Error(
+            payload.message || `Không tải được ảnh (HTTP ${response.status})`,
+          );
+        }
         return response.blob();
       })
       .then((blob) => {
@@ -4124,16 +4143,38 @@ function AuthorizedEvidenceImage({ asset, alt }) {
         objectUrl = URL.createObjectURL(blob);
         setUrl(objectUrl);
       })
-      .catch(() => {});
+      .catch((loadError) => {
+        if (active) setError(loadError.message || "Không tải được ảnh");
+      });
     return () => {
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [source]);
+  }, [source, retry]);
   return url ? (
-    <img src={url} alt={alt} className="h-28 w-full rounded-xl object-cover" />
+    <img
+      src={url}
+      alt={alt}
+      className="h-36 w-full rounded-xl bg-slate-100 object-contain"
+    />
+  ) : error ? (
+    <div
+      role="alert"
+      className="grid h-36 place-items-center rounded-xl bg-red-50 p-3 text-center text-xs text-red-700"
+    >
+      <div>
+        <p>{error}</p>
+        <button
+          type="button"
+          onClick={() => setRetry((value) => value + 1)}
+          className="mt-2 font-semibold underline"
+        >
+          Thử tải lại
+        </button>
+      </div>
+    </div>
   ) : (
-    <div className="grid h-28 place-items-center rounded-xl bg-slate-100 text-xs text-slate-400">
+    <div className="grid h-36 place-items-center rounded-xl bg-slate-100 text-xs text-slate-400">
       Đang tải ảnh...
     </div>
   );
@@ -4348,7 +4389,7 @@ function LegacyBookingV2() {
     Math.ceil((new Date(form.endDate) - new Date(form.startDate)) / 86400000),
   );
   const rental = days * car.pricePerDay,
-    fee = Math.round(rental * 0.1),
+    fee = 0,
     total = rental + fee;
   const steps = ["Lịch trình", "Xác thực", "Xác nhận"];
   const validStep1 =
@@ -4837,7 +4878,9 @@ function BookingQuoteFlow({ carId, quoteId }) {
               {quote.driverFee > 0 && (
                 <PriceLine label="Phí tài xế" value={quote.driverFee} />
               )}
-              <PriceLine label="Phí nền tảng" value={quote.platformFee} />
+              {quote.platformFee > 0 && (
+                <PriceLine label="Phí nền tảng" value={quote.platformFee} />
+              )}
               {quote.outsideHoursFee > 0 && (
                 <PriceLine
                   label="Phụ phí bàn giao ngoài giờ"

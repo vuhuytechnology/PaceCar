@@ -172,6 +172,8 @@ function migrateData(data) {
   data.termsConsents ||= [];
   data.reports ||= [];
   data.commissions ||= [];
+  data.commissionPayments ||= [];
+  data.commissionPaymentAccount ||= null;
   data.paymentAccounts ||= [];
   data.payments ||= [];
   data.promotions ||= [
@@ -203,7 +205,7 @@ function migrateData(data) {
   data.pricingPolicy ||= {
     version: RENTAL_POLICY_VERSION,
     ...RENTAL_POLICY_DEFAULTS,
-    platformFeeRate: 0.1,
+    platformFeeRate: 0,
     insurancePerDay: 80000,
     weekendSurchargeRate: 0.15,
     driverFeePerDay: 350000,
@@ -212,6 +214,10 @@ function migrateData(data) {
     handoverOutsideFee: 100000,
     quoteTtlMinutes: 15,
   };
+  if (data.pricingPolicy.platformFeeRate !== 0) {
+    data.pricingPolicy.platformFeeRate = 0;
+    changed = true;
+  }
   if (data.pricingPolicy.driverFeePerDay == null) {
     data.pricingPolicy.driverFeePerDay = 350000;
     changed = true;
@@ -465,6 +471,14 @@ async function ensureSchema() {
       updated_at timestamptz NOT NULL DEFAULT now()
     )
   `);
+  await getPool().query(`
+    CREATE TABLE IF NOT EXISTS pacecar_evidence_blobs (
+      asset_id bigint PRIMARY KEY,
+      mime_type text NOT NULL,
+      content bytea NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
 }
 
 async function saveDocument(data) {
@@ -566,6 +580,52 @@ export async function flushWrites() {
     throw new Error("PostgreSQL persistence failed", {
       cause: persistenceError,
     });
+}
+
+export async function persistEvidenceBlobs(assets) {
+  if (!postgresEnabled) return;
+  const client = await getPool().connect();
+  let transactionStarted = false;
+  try {
+    await client.query("BEGIN");
+    transactionStarted = true;
+    for (const asset of assets) {
+      const content = await fs.promises.readFile(asset.path);
+      await client.query(
+        `INSERT INTO pacecar_evidence_blobs (asset_id, mime_type, content)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (asset_id) DO UPDATE
+         SET mime_type = EXCLUDED.mime_type, content = EXCLUDED.content`,
+        [asset.id, asset.mimeType, content],
+      );
+    }
+    await client.query("COMMIT");
+    transactionStarted = false;
+  } catch (error) {
+    if (transactionStarted) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        console.error(
+          "Could not roll back evidence image storage:",
+          rollbackError.message,
+        );
+      }
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function readEvidenceBlob(id) {
+  if (!postgresEnabled) return null;
+  const result = await getPool().query(
+    "SELECT mime_type, content FROM pacecar_evidence_blobs WHERE asset_id = $1",
+    [id],
+  );
+  const asset = result.rows[0];
+  return asset ? { mimeType: asset.mime_type, content: asset.content } : null;
 }
 
 export async function importJsonFileToPostgres(jsonFile) {

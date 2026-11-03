@@ -63,6 +63,8 @@ Persona: khách hàng ở Hà Nội, thuê xe tự lái để đi Hải Phòng, 
 
 Để chạy kịch bản thanh toán, chủ xe cần cấu hình mã ngân hàng, số tài khoản và tên chủ tài khoản tại **Hồ sơ cá nhân → Tài khoản nhận tiền cọc**. QR gửi tiền trực tiếp cho chủ xe; chủ xe phải kiểm tra giao dịch thực tế trước khi bấm **Xác nhận đã nhận cọc**. Không xác nhận dựa trên ảnh chụp do người thuê gửi. Xem thêm [hướng dẫn SePay](./SEPAY_SETUP.md). Nếu người test không biết phải bấm gì tiếp theo ở bất kỳ bước nào, ghi lại ảnh màn hình, vai trò đăng nhập và trạng thái booking để xem đó là một vấn đề UX cần cải thiện.
 
+Để kiểm tra hoa hồng, admin cấu hình tài khoản nhận tiền tại **Trung tâm quản trị → Tài khoản nhận hoa hồng SePay**. Khi chuyến mới chuyển sang `Completed`, chủ xe vào **Đơn thuê xe → Hoa hồng nền tảng**, tạo QR và chuyển đúng số tiền/nội dung. Admin chỉ xác nhận sau khi đối chiếu sao kê; QR chưa tự đồng bộ giao dịch.
+
 ## 5. Kiểm tra trước khi test
 
 ```powershell

@@ -187,11 +187,12 @@ try {
     (await request("/dashboard/owner/5", { token: owner })).status,
     403,
   );
-  // Commission trial stays off unless COMMISSION_TRIAL_ENABLED=true.
-  assert.equal(
-    (await request("/admin/commission/policy", { token: admin })).status,
-    403,
-  );
+  const commissionPolicy = await request("/admin/commission/policy", {
+    token: admin,
+  });
+  assert.equal(commissionPolicy.status, 200);
+  assert.equal(commissionPolicy.body.status, "active");
+  assert.equal(commissionPolicy.body.chargeable, true);
 
   const reconciledBookings = await request("/bookings", { token: admin });
   assert.equal(
@@ -563,6 +564,7 @@ try {
   assert.equal(sameDayQuote.body.extraMileageFeePerKm, 3000);
   assert.equal(sameDayQuote.body.baseRental, sameDayQuote.body.pricePerDay);
   assert.equal(typeof sameDayQuote.body.platformFee, "number");
+  assert.equal(sameDayQuote.body.platformFee, 0);
   assert.equal(typeof sameDayQuote.body.insuranceFee, "number");
   assert.equal(typeof sameDayQuote.body.deliveryFee, "number");
   assert.equal(typeof sameDayQuote.body.deposit, "number");
@@ -601,9 +603,9 @@ try {
   assert.equal(addOnQuote.body.deliveryFee, 150000);
   assert.equal(addOnQuote.body.deliveryDistanceKm, 15);
   assert.equal(addOnQuote.body.insuranceFee, 80000);
-  assert.equal(addOnQuote.body.platformFee, 100000);
+  assert.equal(addOnQuote.body.platformFee, 0);
   assert.equal(addOnQuote.body.deposit, 5000000);
-  assert.equal(addOnQuote.body.totalPrice, 1330000);
+  assert.equal(addOnQuote.body.totalPrice, 1230000);
   const deliveryBooking = await request("/bookings", {
     method: "POST",
     token: renter,
@@ -915,7 +917,7 @@ try {
     ).status,
     409,
   );
-  assert.equal(new URL(payment.body.qrUrl).hostname, "vietqr.app");
+  assert.equal(new URL(payment.body.qrUrl).hostname, "qr.sepay.vn");
   const qrParams = new URL(payment.body.qrUrl).searchParams;
   assert.equal(qrParams.get("acc"), "0123456789");
   assert.equal(qrParams.get("amount"), String(booking.body.deposit));
@@ -1193,6 +1195,16 @@ try {
     201,
     JSON.stringify(uploadedEvidence.body),
   );
+  const evidenceImage = await fetch(
+    `${base}/evidence-assets/${uploadedEvidence.body.files[0].id}`,
+    { headers: { Authorization: `Bearer ${renter}` } },
+  );
+  assert.equal(evidenceImage.status, 200);
+  assert.match(evidenceImage.headers.get("content-type"), /^image\/png/);
+  assert.deepEqual(
+    Buffer.from(await evidenceImage.arrayBuffer()),
+    Buffer.from("89504e470d0a1a0a", "hex"),
+  );
   const checkoutEvidence = await request("/evidence", {
     method: "POST",
     token: renter,
@@ -1217,6 +1229,20 @@ try {
     }),
   });
   assert.equal(openedDispute.status, 201, JSON.stringify(openedDispute.body));
+  const adminDisputes = await request("/disputes", { token: admin });
+  assert.ok(
+    adminDisputes.body.some((dispute) => dispute.id === openedDispute.body.id),
+  );
+  const reviewedDispute = await request(
+    `/disputes/${openedDispute.body.id}/status`,
+    {
+      method: "PUT",
+      token: admin,
+      body: JSON.stringify({ status: "Under review" }),
+    },
+  );
+  assert.equal(reviewedDispute.status, 200);
+  assert.equal(reviewedDispute.body.status, "Under review");
   const resolvedDispute = await request(
     `/disputes/${openedDispute.body.id}/status`,
     {

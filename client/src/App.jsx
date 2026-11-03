@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { ToastProvider, Layout } from "./components/UI";
 import { useAuth } from "./auth/AuthContext";
 import AdminAnalytics from "./pages/AdminAnalytics";
+import AdminDisputes from "./pages/AdminDisputes";
 import {
   FavoritesPage,
   MyBookings,
@@ -182,6 +183,14 @@ export default function App() {
             element={
               <RequireRole role="admin">
                 <AdminAnalytics />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/admin/disputes"
+            element={
+              <RequireRole role="admin">
+                <AdminDisputes />
               </RequireRole>
             }
           />

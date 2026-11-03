@@ -7,13 +7,22 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
-import { flushWrites, initializeStore, read, write } from "./data/store.js";
 import {
+  flushWrites,
+  initializeStore,
+  persistEvidenceBlobs,
+  read,
+  readEvidenceBlob,
+  write,
+} from "./data/store.js";
+import {
+  commissionFor,
   RENTAL_POLICY_VERSION,
   TERMS_STATUS,
   TERMS_VERSION,
 } from "./policy.js";
 import { hasPendingPriceRevision, registerDealRoutes } from "./dealRoutes.js";
+import { sepayQrUrl } from "./sepay.js";
 import { emailVerificationEnabled, sendMail } from "./mailer.js";
 const app = express();
 app.set("trust proxy", process.env.TRUST_PROXY || "loopback");
@@ -165,25 +174,75 @@ const bookingView = (data, booking, viewer) => {
 };
 const nextId = (items) =>
   Math.max(0, ...items.map((item) => Number(item.id) || 0)) + 1;
+const createCommissionReceivable = (data, booking, actorId) => {
+  data.commissions ||= [];
+  if (data.commissions.some((item) => item.bookingId === booking.id))
+    return null;
+  const baseAmount = booking.pricingSnapshot?.baseRental;
+  if (
+    !Number.isSafeInteger(baseAmount) ||
+    baseAmount <= 0 ||
+    baseAmount > 1_000_000_000_000
+  ) {
+    const createdAt = new Date().toISOString();
+    data.auditLogs.push({
+      id: nextId(data.auditLogs),
+      entity: "booking",
+      entityId: booking.id,
+      action: "COMMISSION_SKIPPED_INVALID_BASE",
+      actorId,
+      detail: "Completed booking has no valid base rental amount",
+      createdAt,
+    });
+    for (const admin of data.users.filter((user) => user.role === "admin"))
+      data.notifications.push({
+        id: nextId(data.notifications),
+        userId: admin.id,
+        title: "Không tính được hoa hồng",
+        message: `Booking #PC${booking.id} hoàn tất nhưng thiếu giá thuê cơ bản hợp lệ.`,
+        type: "payment",
+        read: false,
+        createdAt,
+      });
+    return null;
+  }
+  const commission = {
+    id: nextId(data.commissions),
+    bookingId: booking.id,
+    ownerId: booking.ownerId,
+    status: "Due",
+    chargeable: true,
+    ...commissionFor(baseAmount),
+    createdBy: actorId,
+    createdAt: new Date().toISOString(),
+  };
+  data.commissions.push(commission);
+  data.auditLogs.push({
+    id: nextId(data.auditLogs),
+    entity: "commission",
+    entityId: commission.id,
+    action: "DUE_CREATED",
+    actorId,
+    detail: `booking ${booking.id}: ${commission.amount}`,
+    createdAt: commission.createdAt,
+  });
+  data.notifications.push({
+    id: nextId(data.notifications),
+    userId: booking.ownerId,
+    title: "Hoa hồng chuyến thuê đã phát sinh",
+    message: `Booking #PC${booking.id}: hoa hồng ${commission.amount.toLocaleString("vi-VN")}đ. Vào mục Đơn thuê xe để thanh toán.`,
+    type: "payment",
+    read: false,
+    createdAt: commission.createdAt,
+  });
+  return commission;
+};
 const analyticsDateKey = (value) => {
   const date = value instanceof Date ? value : new Date(value);
   if (!Number.isFinite(date.getTime())) return null;
   return new Date(date.getTime() + 7 * 60 * 60 * 1000)
     .toISOString()
     .slice(0, 10);
-};
-const sepayQrUrl = ({ bankCode, accountNumber, amount, transferCode }) => {
-  const url = new URL("https://vietqr.app/img");
-  url.search = new URLSearchParams({
-    acc: accountNumber,
-    bank: bankCode,
-    amount: String(amount),
-    des: transferCode,
-    template: "compact",
-    showinfo: "true",
-    fullacc: "true",
-  }).toString();
-  return url.toString();
 };
 const promotionUsageCount = (data, code) =>
   data.bookings.filter(
@@ -738,7 +797,7 @@ const buildQuote = (data, car, input) => {
       : 0;
   const rentalAfterDiscount =
       baseRental + weekendSurcharge + driverFee - longRentalDiscount,
-    platformFee = Math.round(rentalAfterDiscount * policy.platformFeeRate),
+    platformFee = 0,
     insuranceFee = days * policy.insurancePerDay;
   const deliveryFee =
     input.pickupOption === "delivery"
@@ -1193,13 +1252,13 @@ app.post(
   uploadLimiter,
   requireRole(["renter", "owner", "admin"]),
   evidenceUpload.array("files", 6),
-  (req, res) => {
+  async (req, res) => {
     const removeUploadedFiles = () =>
       (req.files || []).forEach((file) => {
         try {
           fs.unlinkSync(path.join(evidenceDir, file.filename));
-        } catch {
-          // A failed cleanup must not hide the original validation response.
+        } catch (error) {
+          console.error("Could not remove temporary evidence image:", error.message);
         }
       });
     const data = read(),
@@ -1214,8 +1273,7 @@ app.post(
     }
     if (!req.files?.length)
       return res.status(400).json({ message: "Vui lòng chọn ít nhất một ảnh" });
-    const files = req.files.map((file) => {
-      const asset = {
+    const assets = req.files.map((file) => ({
         id: nextId(data.uploadedAssets),
         kind: "evidence",
         bookingId: booking.id,
@@ -1225,15 +1283,29 @@ app.post(
         mimeType: file.mimetype,
         size: file.size,
         createdAt: new Date().toISOString(),
-      };
-      data.uploadedAssets.push(asset);
-      return {
+      }));
+    try {
+      await persistEvidenceBlobs(
+        assets.map((asset, index) => ({
+          id: asset.id,
+          mimeType: asset.mimeType,
+          path: req.files[index].path,
+        })),
+      );
+    } catch (error) {
+      removeUploadedFiles();
+      console.error("Could not persist evidence images:", error.message);
+      return res.status(503).json({
+        message: "Không thể lưu ảnh bằng chứng. Vui lòng thử lại sau.",
+      });
+    }
+    data.uploadedAssets.push(...assets);
+    const files = assets.map((asset) => ({
         id: asset.id,
         url: `/api/evidence-assets/${asset.id}`,
         name: asset.originalName,
         type: asset.mimeType,
-      };
-    });
+      }));
     write(data);
     res.status(201).json({ files });
   },
@@ -1241,7 +1313,7 @@ app.post(
 app.get(
   "/api/evidence-assets/:id",
   requireRole(["renter", "owner", "admin"]),
-  (req, res) => {
+  async (req, res) => {
     const data = read(),
       asset = find(data.uploadedAssets, req.params.id);
     if (!asset || asset.kind !== "evidence")
@@ -1252,7 +1324,18 @@ app.get(
         .status(403)
         .json({ message: "Bạn không có quyền xem bằng chứng này" });
     res.set("Cache-Control", "private, no-store, max-age=0");
-    res.type(asset.mimeType).sendFile(path.join(evidenceDir, asset.filename));
+    const storedAsset = await readEvidenceBlob(asset.id);
+    if (storedAsset)
+      return res
+        .type(storedAsset.mimeType || asset.mimeType)
+        .send(storedAsset.content);
+    const filePath = path.join(evidenceDir, asset.filename);
+    if (!fs.existsSync(filePath))
+      return res.status(404).json({
+        message:
+          "Ảnh bằng chứng không còn trên máy chủ. Vui lòng tải ảnh lên lại.",
+      });
+    res.type(asset.mimeType).sendFile(filePath);
   },
 );
 app.get(
@@ -2591,6 +2674,10 @@ app.post("/api/bookings", bookingLimiter, requireRole(["renter"]), (q, s) => {
     return s
       .status(410)
       .json({ message: "Báo giá đã hết hạn, vui lòng tính lại" });
+  if (Number(quote.breakdown?.platformFee || 0) > 0)
+    return s.status(409).json({
+      message: "Chính sách phí đã được cập nhật, vui lòng tạo lại báo giá",
+    });
   if (quote.consumedAt)
     return s
       .status(409)
@@ -3160,6 +3247,8 @@ app.put(
       });
     const previous = b.status;
     b.status = q.body.status;
+    if (previous !== "Completed" && b.status === "Completed")
+      createCommissionReceivable(d, b, actor.id);
     if (ownerPolicyAcknowledgement)
       b.ownerPolicyAcknowledgement = ownerPolicyAcknowledgement;
     d.auditLogs.push({
@@ -3778,6 +3867,8 @@ app.put("/api/disputes/:id/status", requireRole(["admin"]), (q, s) => {
   if (q.body.status === "Resolved") {
     const previousStatus = booking.status;
     booking.status = "Completed";
+    if (previousStatus !== "Completed")
+      createCommissionReceivable(d, booking, q.authUser.id);
     d.auditLogs.push({
       id: nextId(d.auditLogs),
       entity: "booking",

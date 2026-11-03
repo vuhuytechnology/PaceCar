@@ -8,8 +8,8 @@ import {
   TERMS_STATUS,
   TERMS_VERSION,
   commissionFor,
-  commissionTrialEnabled,
 } from "./policy.js";
+import { sepayQrUrl } from "./sepay.js";
 
 const MAX_MONEY = 1_000_000_000;
 const REVISABLE_STATUSES = ["Pending", "Accepted", "Deposit Required"];
@@ -63,10 +63,6 @@ export function registerDealRoutes(app, { read, write, find, requireRole, canAcc
     legacyHeaders: false,
     message: { message: "Bạn gửi phản ánh quá nhanh, vui lòng thử lại sau" },
   });
-  const requireCommissionFlag = (req, res, next) =>
-    commissionTrialEnabled()
-      ? next()
-      : fail(res, 403, "Tính năng tính thử hoa hồng đang tắt");
   const ownBooking = (d, req, res, roles) => {
     const booking = find(d.bookings, req.params.id);
     if (!booking) return fail(res, 404, "Không tìm thấy booking"), null;
@@ -350,16 +346,13 @@ export function registerDealRoutes(app, { read, write, find, requireRole, canAcc
     },
   );
 
-  // Commission trial: dry-run and per-booking record. Never charged to renters,
-  // never creates receivables (chargeable is always false while in trial).
   app.get(
     "/api/admin/commission/policy",
     requireRole(["admin"]),
-    requireCommissionFlag,
     (req, res) =>
       res.json({
         policyVersion: COMMISSION_POLICY_VERSION,
-        status: "proposed-trial",
+        status: "active",
         basis: COMMISSION_BASIS,
         rounding: COMMISSION_ROUNDING,
         eligibleStatuses: COMMISSION_ELIGIBLE_STATUSES,
@@ -368,13 +361,12 @@ export function registerDealRoutes(app, { read, write, find, requireRole, canAcc
           maxExclusive: Number.isFinite(tier.maxExclusive) ? tier.maxExclusive : null,
           rateBps: tier.rateBps,
         })),
-        chargeable: false,
+        chargeable: true,
       }),
   );
   app.get(
     "/api/admin/commission/preview",
     requireRole(["admin"]),
-    requireCommissionFlag,
     (req, res) => {
       const raw = String(req.query.base ?? "");
       try {
@@ -388,45 +380,256 @@ export function registerDealRoutes(app, { read, write, find, requireRole, canAcc
   app.get(
     "/api/admin/commissions",
     requireRole(["admin"]),
-    requireCommissionFlag,
-    (req, res) => res.json([...read().commissions].reverse()),
+    (req, res) => {
+      const d = read();
+      res.json(
+        [...d.commissions]
+          .filter((item) => item.chargeable === true)
+          .reverse()
+          .map((item) => ({
+            ...item,
+            ownerName: find(d.users, item.ownerId)?.name || "Chủ xe",
+          })),
+      );
+    },
   );
+  app.get("/api/admin/commission-payment-account", requireRole(["admin"]), (req, res) => {
+    const account = read().commissionPaymentAccount;
+    res.json(
+      account
+        ? {
+            bankCode: account.bankCode,
+            accountNumber: account.accountNumber,
+            accountHolder: account.accountHolder,
+            updatedAt: account.updatedAt,
+          }
+        : { bankCode: "", accountNumber: "", accountHolder: "" },
+    );
+  });
+  app.put("/api/admin/commission-payment-account", requireRole(["admin"]), (req, res) => {
+    const bankCode = String(req.body.bankCode || "").trim();
+    const accountNumber = String(req.body.accountNumber || "").trim();
+    const accountHolder = String(req.body.accountHolder || "")
+      .trim()
+      .replace(/\s+/g, " ");
+    if (
+      !/^[A-Za-z0-9._-]{2,30}$/.test(bankCode) ||
+      !/^[A-Za-z0-9]{5,19}$/.test(accountNumber) ||
+      accountHolder.length < 2 ||
+      accountHolder.length > 80 ||
+      /[\u0000-\u001f\u007f]/.test(accountHolder)
+    )
+      return fail(res, 422, "Vui lòng nhập thông tin tài khoản PaceCar hợp lệ");
+    const d = read();
+    const updatedAt = now();
+    d.commissionPaymentAccount = {
+      bankCode,
+      accountNumber,
+      accountHolder,
+      updatedAt,
+    };
+    audit(
+      d,
+      "commission_payment_account",
+      1,
+      "UPDATED",
+      req.authUser.id,
+      "Admin commission recipient account updated",
+    );
+    write(d);
+    res.json(d.commissionPaymentAccount);
+  });
+  app.get("/api/owner/commissions", requireRole(["owner"]), (req, res) => {
+    const d = read();
+    res.json(
+      [...d.commissions]
+        .filter(
+          (item) => item.ownerId === req.authUser.id && item.chargeable === true,
+        )
+        .reverse()
+        .map((item) => {
+          const payment = d.commissionPayments.find(
+            (entry) => entry.id === item.paymentId,
+          );
+          const booking = find(d.bookings, item.bookingId);
+          return {
+            id: item.id,
+            bookingId: item.bookingId,
+            status: item.status,
+            baseAmount: item.baseAmount,
+            rateBps: item.rateBps,
+            amount: item.amount,
+            policyVersion: item.policyVersion,
+            createdAt: item.createdAt,
+            paidAt: item.paidAt || null,
+            bookingDates: booking
+              ? { startDate: booking.startDate, endDate: booking.endDate }
+              : null,
+            payment: payment
+              ? {
+                  id: payment.id,
+                  status: payment.status,
+                  amount: payment.amount,
+                  transferCode: payment.transferCode,
+                  qrUrl: payment.qrUrl,
+                  recipient: payment.recipient,
+                  createdAt: payment.createdAt,
+                  paidAt: payment.paidAt || null,
+                }
+              : null,
+          };
+        }),
+    );
+  });
   app.post(
-    "/api/admin/bookings/:id/commission",
-    requireRole(["admin"]),
-    requireCommissionFlag,
+    "/api/owner/commissions/:id/payment",
+    requireRole(["owner"]),
     (req, res) => {
       const d = read(),
-        booking = find(d.bookings, req.params.id);
-      if (!booking) return fail(res, 404, "Không tìm thấy booking");
-      const existing = d.commissions.find((item) => item.bookingId === booking.id);
-      if (existing) return res.json({ ...existing, created: false });
-      if (!COMMISSION_ELIGIBLE_STATUSES.includes(booking.status))
-        return fail(res, 409, "Booking chưa ở trạng thái đủ điều kiện ghi nhận hoa hồng thử nghiệm");
-      if (hasPendingPriceRevision(booking))
-        return fail(res, 409, "Booking còn báo giá chờ xác nhận");
-      const base = booking.pricingSnapshot?.baseRental;
-      let calc;
-      try {
-        if (!(base > 0)) throw new RangeError();
-        calc = commissionFor(base);
-      } catch {
-        return fail(res, 422, "Booking thiếu dữ liệu giá thuê cơ bản hợp lệ");
-      }
-      const record = {
-        id: nextId(d.commissions),
-        bookingId: booking.id,
-        ownerId: booking.ownerId,
-        status: "trial",
-        chargeable: false,
-        ...calc,
-        createdBy: req.authUser.id,
-        createdAt: now(),
+        commission = find(d.commissions, req.params.id);
+      if (!commission || commission.chargeable !== true)
+        return fail(res, 404, "Không tìm thấy khoản hoa hồng");
+      if (commission.ownerId !== req.authUser.id)
+        return fail(res, 403, "Bạn không có quyền thanh toán khoản này");
+      if (commission.status === "Paid")
+        return fail(res, 409, "Khoản hoa hồng này đã được xác nhận thanh toán");
+      const pending = d.commissionPayments.find(
+        (item) =>
+          item.commissionId === commission.id && item.status === "Pending",
+      );
+      if (pending)
+        return res.json({
+          id: pending.id,
+          commissionId: pending.commissionId,
+          status: pending.status,
+          amount: pending.amount,
+          transferCode: pending.transferCode,
+          qrUrl: pending.qrUrl,
+          recipient: pending.recipient,
+          createdAt: pending.createdAt,
+        });
+      if (commission.status !== "Due")
+        return fail(res, 409, "Khoản hoa hồng chưa sẵn sàng để thanh toán");
+      const account = d.commissionPaymentAccount;
+      if (
+        !account ||
+        !/^[A-Za-z0-9._-]{2,30}$/.test(account.bankCode) ||
+        !/^[A-Za-z0-9]{5,19}$/.test(account.accountNumber) ||
+        !account.accountHolder
+      )
+        return fail(res, 409, "PaceCar chưa cấu hình tài khoản nhận hoa hồng");
+      const paymentId = nextId(d.commissionPayments);
+      const transferCode = `PCC${commission.id}P${paymentId}`;
+      const createdAt = now();
+      const payment = {
+        id: paymentId,
+        commissionId: commission.id,
+        bookingId: commission.bookingId,
+        ownerId: commission.ownerId,
+        amount: commission.amount,
+        transferCode,
+        qrUrl: sepayQrUrl({
+          bankCode: account.bankCode,
+          accountNumber: account.accountNumber,
+          amount: commission.amount,
+          transferCode,
+        }),
+        recipient: {
+          bankCode: account.bankCode,
+          accountNumber: account.accountNumber,
+          accountHolder: account.accountHolder,
+        },
+        status: "Pending",
+        createdAt,
       };
-      d.commissions.push(record);
-      audit(d, "commission", record.id, "TRIAL_RECORDED", req.authUser.id, `booking ${booking.id}: ${record.amount}`);
+      d.commissionPayments.push(payment);
+      commission.status = "Pending";
+      commission.paymentId = paymentId;
+      audit(
+        d,
+        "commission",
+        commission.id,
+        "PAYMENT_INSTRUCTIONS_CREATED",
+        req.authUser.id,
+        `${payment.amount}:${transferCode}`,
+      );
       write(d);
-      res.status(201).json({ ...record, created: true });
+      res.status(201).json({
+        id: payment.id,
+        commissionId: payment.commissionId,
+        status: payment.status,
+        amount: payment.amount,
+        transferCode: payment.transferCode,
+        qrUrl: payment.qrUrl,
+        recipient: payment.recipient,
+        createdAt: payment.createdAt,
+      });
+    },
+  );
+  app.get("/api/admin/commission-payments", requireRole(["admin"]), (req, res) => {
+    const d = read();
+    res.json(
+      [...d.commissionPayments].reverse().map((payment) => ({
+        id: payment.id,
+        commissionId: payment.commissionId,
+        bookingId: payment.bookingId,
+        ownerId: payment.ownerId,
+        ownerName: find(d.users, payment.ownerId)?.name || "Chủ xe",
+        amount: payment.amount,
+        transferCode: payment.transferCode,
+        status: payment.status,
+        createdAt: payment.createdAt,
+        paidAt: payment.paidAt || null,
+      })),
+    );
+  });
+  app.post(
+    "/api/admin/commission-payments/:id/confirm",
+    requireRole(["admin"]),
+    (req, res) => {
+      const d = read(),
+        payment = find(d.commissionPayments, req.params.id);
+      if (!payment) return fail(res, 404, "Không tìm thấy yêu cầu thanh toán");
+      if (payment.status === "Paid")
+        return res.json({
+          paymentId: payment.id,
+          status: payment.status,
+          paidAt: payment.paidAt,
+        });
+      if (payment.status !== "Pending")
+        return fail(res, 409, "Yêu cầu thanh toán không còn chờ xác nhận");
+      const commission = find(d.commissions, payment.commissionId);
+      if (
+        !commission ||
+        commission.paymentId !== payment.id ||
+        commission.amount !== payment.amount ||
+        commission.ownerId !== payment.ownerId ||
+        commission.status !== "Pending"
+      )
+        return fail(res, 409, "Thông tin đối soát hoa hồng không nhất quán");
+      const paidAt = now();
+      payment.status = "Paid";
+      payment.paidAt = paidAt;
+      payment.confirmedBy = req.authUser.id;
+      commission.status = "Paid";
+      commission.paidAt = paidAt;
+      audit(
+        d,
+        "commission",
+        commission.id,
+        "PAYMENT_CONFIRMED",
+        req.authUser.id,
+        `${payment.amount}:${payment.transferCode}`,
+      );
+      notify(
+        d,
+        commission.ownerId,
+        "Đã xác nhận thanh toán hoa hồng",
+        `Hoa hồng booking #PC${commission.bookingId} đã được xác nhận đã nhận tiền.`,
+        "payment",
+      );
+      write(d);
+      res.json({ paymentId: payment.id, status: payment.status, paidAt });
     },
   );
 }

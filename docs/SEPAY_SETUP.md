@@ -1,6 +1,6 @@
-# Tích hợp QR SePay cho tiền cọc
+# Tích hợp QR SePay
 
-## Luồng hiện tại
+## Tiền cọc
 
 - Chủ xe cấu hình mã ngân hàng/VietQR, số tài khoản và tên chủ tài khoản trong **Hồ sơ cá nhân → Tài khoản nhận tiền cọc**.
 - Khi booking được chấp nhận, người thuê có thể yêu cầu QR cho đúng số tiền cọc và mã chuyển khoản riêng của booking.
@@ -8,7 +8,7 @@
 - Yêu cầu QR chỉ đưa booking sang trạng thái **Đang chờ chủ xe xác nhận**. Chủ xe phải kiểm tra giao dịch trong tài khoản ngân hàng, đối chiếu số tiền và nội dung chuyển khoản, rồi mới xác nhận trên PaceCar.
 - Nếu chưa nhận được tiền, chủ xe có thể hủy QR sau khi đã kiểm tra tài khoản. Không hủy nếu tiền đã chuyển; việc hoàn tiền ngoài quy trình này cần được hai bên xử lý trực tiếp.
 
-Website dùng quick link tạo ảnh QR được mô tả trên [trang QR của SePay](https://qr.sepay.vn/), với ngân hàng, số tài khoản, số tiền và nội dung chuyển khoản lấy từ booking/tài khoản chủ xe. SePay/VietQR nhận các tham số này để trả ảnh QR.
+Website tạo ảnh QR qua [SePay QR](https://qr.sepay.vn/) với ngân hàng, số tài khoản, số tiền và nội dung chuyển khoản lấy từ booking/tài khoản nhận tiền. QR chỉ tạo hướng dẫn chuyển khoản; nó không xác minh tiền đã vào tài khoản.
 
 ## Cấu hình và triển khai
 
@@ -21,10 +21,21 @@ Website dùng quick link tạo ảnh QR được mô tả trên [trang QR của 
 
 Luồng đã chọn là **chủ xe nhận trực tiếp và xác nhận thủ công**. Vì vậy không cần thêm API key, webhook secret hoặc biến môi trường SePay trên Render. Đây chưa phải xác thực thanh toán tự động: ứng dụng không nhận webhook và không tự đánh dấu đã thanh toán khi tiền vào ngân hàng.
 
-Thông tin tài khoản được lưu riêng theo chủ xe; chỉ chủ xe đó có thể xem/sửa trong hồ sơ, và chỉ được trả về cho người thuê đang tạo QR cho booking với chủ xe ấy. Không ghi số tài khoản vào audit log hoặc hồ sơ công khai. URL tạo ảnh QR gửi thông tin tài khoản, số tiền và mã chuyển khoản đến dịch vụ QR của SePay/VietQR.
+Thông tin tài khoản cọc được lưu riêng theo chủ xe; chỉ chủ xe đó có thể xem/sửa trong hồ sơ, và chỉ được trả về cho người thuê đang tạo QR cho booking với chủ xe ấy. Không ghi số tài khoản vào audit log hoặc hồ sơ công khai.
 
 Các bản ghi cũ có `paymentStatus: "Paid"` được giữ nguyên; ứng dụng không tự giả định các khoản đó đã được ngân hàng đối soát. Cần rà soát thủ công các giao dịch cũ trước khi sử dụng trạng thái đó cho hoạt động thật.
 
+## Hoa hồng chủ xe chuyển cho PaceCar
+
+- Hoa hồng được ghi nhận khi booking **lần đầu chuyển sang `Completed`**. Các booking đã hoàn tất trước khi bật luồng này không bị tính hồi tố.
+- Cơ sở tính là `pricingSnapshot.baseRental` (số ngày × giá thuê/ngày). Mức áp dụng cho toàn bộ cơ sở tính: dưới 1.000.000đ là 5%; từ 1.000.000đ đến dưới 2.000.000đ là 4%; từ 2.000.000đ là 3%. Làm tròn half-up đến đồng Việt Nam.
+- Chủ xe không trả thêm hoa hồng qua báo giá thuê; khoản hoa hồng là một khoản riêng phát sinh sau chuyến.
+- Admin đăng nhập **Trung tâm quản trị → Tài khoản nhận hoa hồng SePay** để cấu hình ngân hàng, số tài khoản và tên chủ tài khoản nhận tiền của PaceCar.
+- Chủ xe mở **Đơn thuê xe → Hoa hồng nền tảng**, tạo QR và chuyển đúng số tiền cùng nội dung chuyển khoản hiển thị.
+- Admin đối chiếu sao kê tài khoản nhận tiền theo đúng số tiền và mã chuyển khoản, sau đó chọn **Xác nhận đã nhận tiền**. Không xác nhận dựa trên ảnh chụp do chủ xe gửi.
+
+Luồng này dùng QR chuyển khoản SePay, chưa tích hợp webhook/API để tự đối soát. Trạng thái chỉ chuyển sang đã thanh toán sau khi admin xác nhận thủ công. Tài khoản nhận hoa hồng độc lập với tài khoản nhận tiền cọc của từng chủ xe.
+
 ## Nâng cấp xác thực tự động
 
-Muốn xác nhận tự động qua webhook cần một quyết định và thiết kế onboarding riêng cho tài khoản nhận tiền của từng chủ xe, kèm cơ chế xác thực webhook, chống xử lý lặp, đối chiếu đúng tài khoản/số tiền/mã chuyển khoản và xử lý giao dịch sai lệch. Không cấu hình webhook trên một tài khoản PaceCar chung nếu chưa thay đổi và phê duyệt lại điều khoản về bên nhận/giữ tiền.
+Muốn xác nhận tự động qua webhook cần cấu hình webhook SePay, xác thực nguồn gọi, chống xử lý lặp và đối chiếu đúng tài khoản, số tiền, mã chuyển khoản; cần kiểm thử cả giao dịch sai lệch và hoàn tiền. Luồng hoa hồng hiện không tự động xác nhận.

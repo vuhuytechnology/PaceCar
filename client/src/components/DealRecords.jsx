@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api, dateTime, money } from "../services/api";
-import { Button, useToast } from "./UI";
+import { Button, Modal, useToast } from "./UI";
 
 const NOT_PUBLISHED = "Chủ xe chưa công bố — cần xác nhận trực tiếp trước khi đặt cọc";
 
@@ -341,88 +341,456 @@ export function ReportForm({ carId, bookingId, defaultType = "price_mismatch" })
   );
 }
 
+export function OwnerCommissionsPanel() {
+  const toast = useToast();
+  const [commissions, setCommissions] = useState(null);
+  const [error, setError] = useState("");
+  const [payingId, setPayingId] = useState(null);
+  const load = () => {
+    setError("");
+    api("/owner/commissions")
+      .then(setCommissions)
+      .catch((requestError) => setError(requestError.message));
+  };
+  useEffect(() => {
+    load();
+  }, []);
+  async function createPayment(commission) {
+    setPayingId(commission.id);
+    try {
+      await api(`/owner/commissions/${commission.id}/payment`, {
+        method: "POST",
+      });
+      toast.success("Đã tạo hướng dẫn chuyển khoản hoa hồng");
+      load();
+    } catch (requestError) {
+      toast.error(requestError.message);
+    } finally {
+      setPayingId(null);
+    }
+  }
+  return (
+    <section className="card mt-5 p-5" aria-labelledby="owner-commissions-title">
+      <h2 id="owner-commissions-title" className="text-lg font-bold">
+        Hoa hồng nền tảng
+      </h2>
+      <p className="mt-1 text-sm text-slate-600">
+        Hoa hồng phát sinh sau khi chuyến thuê hoàn tất. PaceCar xác nhận thanh
+        toán sau khi đối chiếu giao dịch ngân hàng.
+      </p>
+      {error ? (
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <p className="text-sm text-red-700" role="alert">
+            {error}
+          </p>
+          <Button variant="outline" onClick={load}>
+            Tải lại
+          </Button>
+        </div>
+      ) : !commissions ? (
+        <p className="mt-4 text-sm text-slate-500">Đang tải khoản hoa hồng…</p>
+      ) : commissions.length ? (
+        <ul className="mt-4 space-y-4">
+          {commissions.map((commission) => (
+            <li
+              className="rounded-xl border border-slate-200 p-4"
+              key={commission.id}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <b>Booking #{commission.bookingId}</b>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Cơ sở {money(commission.baseAmount)} ×{" "}
+                    {commission.rateBps / 100}% ·{" "}
+                    <b>{money(commission.amount)}</b>
+                  </p>
+                </div>
+                <span className="text-sm font-semibold">
+                  {commission.status === "Paid"
+                    ? "Đã thanh toán"
+                    : commission.status === "Pending"
+                      ? "Chờ PaceCar xác nhận"
+                      : "Cần thanh toán"}
+                </span>
+              </div>
+              {commission.status === "Due" && (
+                <Button
+                  className="mt-3"
+                  disabled={payingId === commission.id}
+                  onClick={() => createPayment(commission)}
+                >
+                  {payingId === commission.id
+                    ? "Đang tạo QR..."
+                    : "Tạo QR thanh toán"}
+                </Button>
+              )}
+              {commission.status === "Pending" && commission.payment && (
+                <div className="mt-4 grid gap-4 rounded-lg bg-slate-50 p-4 sm:grid-cols-[160px_1fr]">
+                  <img
+                    src={commission.payment.qrUrl}
+                    alt={`QR thanh toán hoa hồng booking ${commission.bookingId}`}
+                    loading="lazy"
+                    className="mx-auto aspect-square w-40 rounded-lg border bg-white object-contain p-2"
+                  />
+                  <div>
+                    <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                      <div>
+                        <dt className="text-slate-500">Ngân hàng</dt>
+                        <dd className="font-semibold">
+                          {commission.payment.recipient.bankCode}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-slate-500">Số tài khoản PaceCar</dt>
+                        <dd className="font-semibold">
+                          {commission.payment.recipient.accountNumber}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-slate-500">Chủ tài khoản</dt>
+                        <dd className="font-semibold">
+                          {commission.payment.recipient.accountHolder}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-slate-500">Số tiền chính xác</dt>
+                        <dd className="font-bold">
+                          {money(commission.payment.amount)}
+                        </dd>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <dt className="text-slate-500">
+                          Nội dung chuyển khoản
+                        </dt>
+                        <dd className="font-bold text-brand-700">
+                          {commission.payment.transferCode}
+                        </dd>
+                      </div>
+                    </dl>
+                    <p className="mt-2 text-xs text-slate-500">
+                      Vui lòng chuyển đúng số tiền và nội dung. QR chưa xác
+                      nhận tự động; chờ PaceCar đối chiếu sao kê.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-4 text-sm text-slate-500">
+          Chưa có khoản hoa hồng cần thanh toán.
+        </p>
+      )}
+    </section>
+  );
+}
+
 export function AdminDealsPanel() {
   const toast = useToast();
   const [state, setState] = useState({ loading: true });
   const [base, setBase] = useState("2100000");
   const [preview, setPreview] = useState(null);
+  const [account, setAccount] = useState({
+    bankCode: "",
+    accountNumber: "",
+    accountHolder: "",
+  });
+  const [accountSaving, setAccountSaving] = useState(false);
+  const [confirming, setConfirming] = useState(null);
+  const [confirmingBusy, setConfirmingBusy] = useState(false);
   const load = async () => {
-    const [reports, consents] = await Promise.all([api("/admin/reports"), api("/admin/terms-consents")]);
-    const policy = await api("/admin/commission/policy").catch(() => null);
-    const commissions = policy ? await api("/admin/commissions") : [];
-    setState({ reports, consents, policy, commissions });
+    const [reports, consents, policy, commissions, payments, savedAccount] =
+      await Promise.all([
+        api("/admin/reports"),
+        api("/admin/terms-consents"),
+        api("/admin/commission/policy"),
+        api("/admin/commissions"),
+        api("/admin/commission-payments"),
+        api("/admin/commission-payment-account"),
+      ]);
+    setAccount(savedAccount);
+    setState({ reports, consents, policy, commissions, payments });
   };
   useEffect(() => {
     load().catch((error) => setState({ error: error.message }));
   }, []);
+  async function saveAccount(event) {
+    event.preventDefault();
+    setAccountSaving(true);
+    try {
+      setAccount(
+        await api("/admin/commission-payment-account", {
+          method: "PUT",
+          body: JSON.stringify(account),
+        }),
+      );
+      toast.success("Đã lưu tài khoản nhận hoa hồng");
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setAccountSaving(false);
+    }
+  }
+  async function confirmPayment() {
+    if (!confirming) return;
+    setConfirmingBusy(true);
+    try {
+      await api(`/admin/commission-payments/${confirming.id}/confirm`, {
+        method: "POST",
+      });
+      toast.success("Đã xác nhận nhận tiền hoa hồng");
+      setConfirming(null);
+      await load();
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setConfirmingBusy(false);
+    }
+  }
   if (state.loading) return null;
-  if (state.error) return <p className="mt-6 text-sm text-red-600">{state.error}</p>;
+  if (state.error)
+    return (
+      <div className="mt-6 flex items-center gap-3">
+        <p className="text-sm text-red-600" role="alert">
+          {state.error}
+        </p>
+        <Button
+          variant="outline"
+          onClick={() =>
+            load().catch((error) => setState({ error: error.message }))
+          }
+        >
+          Tải lại
+        </Button>
+      </div>
+    );
   return (
-    <section className="card mt-6 p-6" aria-labelledby="admin-deals-title">
-      <h2 id="admin-deals-title" className="text-lg font-bold">
-        Điều khoản, phản ánh và hoa hồng thử nghiệm
-      </h2>
-      <div className="mt-4 grid gap-6 lg:grid-cols-2">
-        <div>
-          <h3 className="font-semibold">Phản ánh ({state.reports.length})</h3>
-          <ul className="mt-2 space-y-2 text-sm">
-            {state.reports.slice(0, 8).map((report) => (
-              <li className="rounded-lg bg-slate-50 p-3" key={report.id}>
-                <b>{report.type}</b> · xe #{report.carId ?? "—"} · {report.status}
-                <p className="text-slate-600">{report.message}</p>
-                {report.status === "Open" && (
-                  <button
-                    className="mt-1 text-xs font-semibold text-brand-700 underline"
-                    onClick={() =>
-                      api(`/admin/reports/${report.id}`, { method: "PUT", body: JSON.stringify({ status: "Resolved" }) })
-                        .then(load)
-                        .catch((error) => toast.error(error.message))
+    <>
+      <section className="card mt-6 p-6" aria-labelledby="admin-deals-title">
+        <h2 id="admin-deals-title" className="text-lg font-bold">
+          Điều khoản, phản ánh và hoa hồng
+        </h2>
+        <div className="mt-4 grid gap-6 lg:grid-cols-2">
+          <div>
+            <h3 className="font-semibold">Phản ánh ({state.reports.length})</h3>
+            <ul className="mt-2 space-y-2 text-sm">
+              {state.reports.slice(0, 8).map((report) => (
+                <li className="rounded-lg bg-slate-50 p-3" key={report.id}>
+                  <b>{report.type}</b> · xe #{report.carId ?? "—"} ·{" "}
+                  {report.status}
+                  <p className="text-slate-600">{report.message}</p>
+                  {report.status === "Open" && (
+                    <button
+                      className="mt-1 text-xs font-semibold text-brand-700 underline"
+                      onClick={() =>
+                        api(`/admin/reports/${report.id}`, {
+                          method: "PUT",
+                          body: JSON.stringify({ status: "Resolved" }),
+                        })
+                          .then(load)
+                          .catch((error) => toast.error(error.message))
+                      }
+                    >
+                      Đánh dấu đã xử lý
+                    </button>
+                  )}
+                </li>
+              ))}
+              {!state.reports.length && (
+                <li className="text-slate-500">Chưa có phản ánh.</li>
+              )}
+            </ul>
+            <h3 className="mt-5 font-semibold">
+              Ghi nhận chấp thuận điều khoản ({state.consents.length})
+            </h3>
+            <p className="text-xs text-slate-500">
+              Người dùng, phiên bản, thời điểm và mã yêu cầu được lưu cho từng
+              booking.
+            </p>
+          </div>
+          <div className="space-y-6">
+            <section>
+              <h3 className="font-semibold">Tài khoản nhận hoa hồng SePay</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Chủ xe chuyển khoản vào tài khoản PaceCar này. Admin xác nhận
+                thủ công sau khi đối chiếu giao dịch ngân hàng.
+              </p>
+              <form className="mt-3 space-y-3" onSubmit={saveAccount}>
+                <label className="label">
+                  Mã ngân hàng
+                  <input
+                    className="input mt-1"
+                    autoComplete="off"
+                    required
+                    maxLength={30}
+                    value={account.bankCode}
+                    onChange={(event) =>
+                      setAccount({ ...account, bankCode: event.target.value })
                     }
-                  >
-                    Đánh dấu đã xử lý
-                  </button>
-                )}
-              </li>
-            ))}
-            {!state.reports.length && <li className="text-slate-500">Chưa có phản ánh.</li>}
-          </ul>
-          <h3 className="mt-5 font-semibold">Ghi nhận chấp thuận điều khoản ({state.consents.length})</h3>
-          <p className="text-xs text-slate-500">Người dùng, phiên bản, thời điểm và mã yêu cầu được lưu cho từng booking.</p>
-        </div>
-        <div>
-          <h3 className="font-semibold">Hoa hồng thử nghiệm</h3>
-          {state.policy ? (
-            <>
-              <p className="mt-1 text-xs text-amber-700">
-                Phương án đề xuất, chưa phải chính sách chính thức: chỉ tính thử, không tạo công nợ hay thu phí.
+                    placeholder="Ví dụ: MBBank"
+                  />
+                </label>
+                <label className="label">
+                  Số tài khoản
+                  <input
+                    className="input mt-1"
+                    autoComplete="off"
+                    required
+                    maxLength={19}
+                    value={account.accountNumber}
+                    onChange={(event) =>
+                      setAccount({
+                        ...account,
+                        accountNumber: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label className="label">
+                  Tên chủ tài khoản
+                  <input
+                    className="input mt-1"
+                    autoComplete="off"
+                    required
+                    maxLength={80}
+                    value={account.accountHolder}
+                    onChange={(event) =>
+                      setAccount({
+                        ...account,
+                        accountHolder: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <Button disabled={accountSaving}>
+                  {accountSaving ? "Đang lưu..." : "Lưu tài khoản nhận hoa hồng"}
+                </Button>
+              </form>
+            </section>
+            <section>
+              <h3 className="font-semibold">Đối soát hoa hồng</h3>
+              <p className="mt-1 text-xs text-slate-600">
+                Phát sinh khi booking hoàn tất; QR chưa tự xác nhận giao dịch.
+                Chỉ xác nhận sau khi kiểm tra đúng số tiền và nội dung chuyển
+                khoản trong sao kê.
               </p>
               <form
-                className="mt-2 flex gap-2"
-                onSubmit={async (e) => {
-                  e.preventDefault();
+                className="mt-3 flex gap-2"
+                onSubmit={async (event) => {
+                  event.preventDefault();
                   try {
-                    setPreview(await api(`/admin/commission/preview?base=${encodeURIComponent(base)}`));
+                    setPreview(
+                      await api(
+                        `/admin/commission/preview?base=${encodeURIComponent(base)}`,
+                      ),
+                    );
                   } catch (error) {
                     setPreview(null);
                     toast.error(error.message);
                   }
                 }}
               >
-                <input className="input" inputMode="numeric" aria-label="Tổng tiền thuê cơ bản" value={base} onChange={(e) => setBase(e.target.value)} />
-                <Button>Tính thử</Button>
+                <input
+                  className="input"
+                  inputMode="numeric"
+                  aria-label="Tiền thuê cơ bản"
+                  value={base}
+                  onChange={(event) => setBase(event.target.value)}
+                />
+                <Button>Tính</Button>
               </form>
               {preview && (
                 <p className="mt-2 text-sm">
-                  {money(preview.baseAmount)} × {preview.rate * 100}% = <b>{money(preview.amount)}</b>
+                  {money(preview.baseAmount)} × {preview.rate * 100}% ={" "}
+                  <b>{money(preview.amount)}</b>
                 </p>
               )}
-              <p className="mt-3 text-sm text-slate-600">Đã ghi nhận thử: {state.commissions.length} giao dịch.</p>
-            </>
-          ) : (
-            <p className="mt-1 text-sm text-slate-500">Tính năng đang tắt (COMMISSION_TRIAL_ENABLED).</p>
-          )}
+              <h4 className="mt-4 text-sm font-semibold">
+                Hóa đơn ({state.commissions.length})
+              </h4>
+              <ul className="mt-2 space-y-2 text-sm">
+                {state.commissions.slice(0, 8).map((commission) => (
+                  <li
+                    className="rounded-lg bg-slate-50 p-3"
+                    key={commission.id}
+                  >
+                    <b>Booking #{commission.bookingId}</b> ·{" "}
+                    {commission.ownerName || `Chủ xe #${commission.ownerId}`}
+                    <p className="text-slate-600">
+                      {money(commission.amount)} ·{" "}
+                      {commission.status === "Paid"
+                        ? "Đã thanh toán"
+                        : commission.status === "Pending"
+                          ? "Chờ xác nhận"
+                          : "Cần thanh toán"}
+                    </p>
+                  </li>
+                ))}
+                {!state.commissions.length && (
+                  <li className="text-slate-500">Chưa có hóa đơn.</li>
+                )}
+              </ul>
+              <h4 className="mt-4 text-sm font-semibold">
+                Chuyển khoản chờ xác nhận
+              </h4>
+              <ul className="mt-2 space-y-2 text-sm">
+                {state.payments
+                  .filter((payment) => payment.status === "Pending")
+                  .map((payment) => (
+                    <li
+                      className="rounded-lg border border-amber-200 bg-amber-50 p-3"
+                      key={payment.id}
+                    >
+                      <b>Booking #{payment.bookingId}</b> · {payment.ownerName}
+                      <p>
+                        {money(payment.amount)} · {payment.transferCode}
+                      </p>
+                      <Button
+                        className="mt-2"
+                        onClick={() => setConfirming(payment)}
+                      >
+                        Xác nhận đã nhận tiền
+                      </Button>
+                    </li>
+                  ))}
+                {!state.payments.some(
+                  (payment) => payment.status === "Pending",
+                ) && (
+                  <li className="text-slate-500">
+                    Không có khoản chờ xác nhận.
+                  </li>
+                )}
+              </ul>
+            </section>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+      <Modal
+        open={!!confirming}
+        title="Xác nhận đã nhận hoa hồng"
+        onClose={() => !confirmingBusy && setConfirming(null)}
+        actions={
+          <>
+            <Button
+              variant="outline"
+              disabled={confirmingBusy}
+              onClick={() => setConfirming(null)}
+            >
+              Quay lại
+            </Button>
+            <Button disabled={confirmingBusy} onClick={confirmPayment}>
+              {confirmingBusy ? "Đang xử lý..." : "Đã đối chiếu, xác nhận"}
+            </Button>
+          </>
+        }
+      >
+        <p>
+          Chỉ xác nhận sau khi sao kê tài khoản PaceCar khớp số tiền{" "}
+          <b>{confirming ? money(confirming.amount) : ""}</b> và nội dung{" "}
+          <b>{confirming?.transferCode}</b>.
+        </p>
+      </Modal>
+    </>
   );
 }

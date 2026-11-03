@@ -6,7 +6,9 @@ Khi có `DATABASE_URL`, backend dùng bảng `pacecar_store` với một hàng c
 
 Đây là bước chuyển đổi ít thay đổi nghiệp vụ, chưa phải schema quan hệ đã chuẩn hóa. Không chạy nhiều instance ứng dụng cùng lúc vì mỗi instance giữ cache riêng. Khi không có `DATABASE_URL`, backend tiếp tục dùng file JSON như trước.
 
-Tệp ảnh, tài liệu và bằng chứng không được đưa vào PostgreSQL; chúng vẫn nằm trong `PACECAR_UPLOAD_DIR`. Cần cấu hình persistent disk hoặc object storage riêng nếu cần giữ tệp qua lần deploy.
+Ảnh bằng chứng tranh chấp được lưu riêng trong bảng `pacecar_evidence_blobs` dưới dạng BYTEA khi có `DATABASE_URL`, không nằm trong JSONB của `pacecar_store`. Nếu không có PostgreSQL, ảnh bằng chứng vẫn dùng thư mục upload local. Ảnh tin xe và tài liệu riêng tư vẫn nằm trên filesystem; cần persistent disk hoặc object storage riêng để giữ các tệp này qua lần deploy.
+
+Các ảnh bằng chứng đã tải lên trước thay đổi này vẫn được đọc từ filesystem nếu tệp còn tồn tại. Không thể khôi phục những tệp đã bị mất khỏi filesystem; người dùng cần tải lại ảnh gốc nếu còn bản sao.
 
 ## Render và cấu hình
 
@@ -46,6 +48,6 @@ Lệnh export ghi file tạm cùng thư mục rồi đổi tên nguyên tử. B�
 ## Kiểm thử và giới hạn
 
 - `npm test` chạy smoke/deal tests với JSON cô lập; các test chủ động bỏ `DATABASE_URL`.
-- PostgreSQL tự tạo bảng ở lần khởi động đầu và áp dụng các migration dữ liệu hiện có trong ứng dụng.
+- PostgreSQL tự tạo các bảng `pacecar_store` và `pacecar_evidence_blobs` ở lần khởi động đầu; store cũng áp dụng các migration dữ liệu hiện có trong ứng dụng.
 - Cần kiểm thử kết nối, import, luồng đọc/ghi, khởi động lại và backup/restore trên database thử trước khi đổi production.
-- Migration không chuyển file upload, không thay đổi nghiệp vụ và không thay schema JSON thành các bảng quan hệ riêng.
+- Migration không chuyển ảnh tin xe hoặc tài liệu riêng tư; không thay đổi nghiệp vụ và không thay schema JSON thành các bảng quan hệ riêng.

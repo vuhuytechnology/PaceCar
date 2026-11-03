@@ -15,6 +15,7 @@ import {
 import { useAuth } from "../auth/AuthContext";
 import { api, date, dateTime, money } from "../services/api";
 import { RENTAL_POLICY } from "../services/rentalPolicy";
+import { OwnerCommissionsPanel } from "../components/DealRecords";
 import {
   Button,
   CarCard,
@@ -377,6 +378,7 @@ export function MyBookings() {
           />
         )}
       </div>
+      {user.role === "owner" && <OwnerCommissionsPanel />}
       <Modal
         open={!!paymentDetails}
         title="QR chuyển tiền cọc"

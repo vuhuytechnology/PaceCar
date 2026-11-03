@@ -48,7 +48,6 @@ const server = spawn(process.execPath, ["src/index.js"], {
     PACECAR_DB_FILE: dbFile,
     PACECAR_UPLOAD_DIR: path.join(tempDir, "uploads"),
     CLIENT_ORIGIN: "http://localhost:5173",
-    COMMISSION_TRIAL_ENABLED: "true",
     EMAIL_VERIFICATION_ENABLED: "true",
     MAIL_TRANSPORT: "file",
     MAIL_OUTBOX_FILE: path.join(tempDir, "outbox.jsonl"),
@@ -412,7 +411,13 @@ try {
     409,
     "no refund record before checkout",
   );
-  assert.equal((await send(`/admin/bookings/${rentalId}/commission`, "POST", admin)).status, 409, "not completed yet");
+  assert.equal(
+    (await request("/owner/commissions", { token: owner })).body.some(
+      (item) => item.bookingId === rentalId,
+    ),
+    false,
+    "commission is not due before completion",
+  );
   await completeBooking(rentalId);
   const deposit = rental.quote.deposit;
   assert.ok(deposit > 100);
@@ -442,35 +447,130 @@ try {
   const afterRefund = (await request(`/bookings/${rentalId}`, { token: owner })).body;
   assert.equal(afterRefund.depositRefundHistory.length, 1, "history preserved");
 
-  // Commission trial
+  // Commission receivable and SePay settlement
   const baseRental = rental.quote.baseRental;
   assert.equal(baseRental, rental.quote.days * rental.quote.pricePerDay);
   assert.equal((await request("/admin/commission/policy", { token: owner })).status, 403);
   const policy = await request("/admin/commission/policy", { token: admin });
-  assert.equal(policy.body.chargeable, false);
+  assert.equal(policy.body.status, "active");
+  assert.equal(policy.body.chargeable, true);
   assert.deepEqual(policy.body.tiers.map((t) => t.rateBps), [500, 400, 300]);
   for (const [value, amount] of [["999999", 50000], ["1000000", 40000], ["1999999", 80000], ["2000000", 60000], ["2100000", 63000], ["1400000", 56000]])
     assert.equal((await request(`/admin/commission/preview?base=${value}`, { token: admin })).body.amount, amount);
   for (const value of ["-1", "abc", "1.5", "", "99999999999999"])
     assert.equal((await request(`/admin/commission/preview?base=${value}`, { token: admin })).status, 400, value);
   const totalBefore = (await request(`/bookings/${rentalId}`, { token: renter })).body.totalPrice;
-  const attempts = await Promise.all(
-    Array.from({ length: 5 }, () => send(`/admin/bookings/${rentalId}/commission`, "POST", admin)),
-  );
-  assert.deepEqual(attempts.map((r) => r.status).sort(), [200, 200, 200, 200, 201]);
-  const record = attempts.find((r) => r.status === 201).body;
+  const record = stored().commissions.find((item) => item.bookingId === rentalId);
   const expected = commissionFor(baseRental);
+  assert.ok(record, "completion creates a commission receivable");
   assert.equal(record.amount, expected.amount);
   assert.equal(record.baseAmount, baseRental);
   assert.equal(record.policyVersion, COMMISSION_POLICY_VERSION);
-  assert.equal(record.chargeable, false);
-  assert.equal(record.status, "trial");
-  assert.equal(stored().commissions.length, 1);
+  assert.equal(record.chargeable, true);
+  assert.equal(record.status, "Due");
+  assert.equal(
+    (await request("/owner/commissions", { token: owner })).body.some(
+      (item) => item.id === record.id,
+    ),
+    true,
+  );
+  assert.equal(
+    (await request("/owner/commissions", { token: unrelatedOwner })).body.some(
+      (item) => item.id === record.id,
+    ),
+    false,
+    "owners cannot see each other's commissions",
+  );
+  assert.equal((await request("/owner/commissions", { token: renter })).status, 403);
   assert.equal((await request(`/bookings/${rentalId}`, { token: renter })).body.totalPrice, totalBefore, "renter is not charged");
-  assert.equal((await send(`/admin/bookings/${rentalId}/commission`, "POST", owner)).status, 403);
-  assert.equal((await request("/admin/commissions", { token: admin })).body.length, 1);
-  // Not eligible: pending booking, and legacy booking lacking pricing data.
-  assert.equal((await send(`/admin/bookings/${pending.booking.id}/commission`, "POST", admin)).status, 409);
+  assert.equal(
+    (await send(`/owner/commissions/${record.id}/payment`, "POST", unrelatedOwner)).status,
+    403,
+  );
+  assert.equal(
+    (await send(`/owner/commissions/${record.id}/payment`, "POST", owner)).status,
+    409,
+    "cannot create QR before admin configures the recipient account",
+  );
+  assert.equal((await request("/admin/commission-payment-account", { token: owner })).status, 403);
+  assert.equal(
+    (
+      await send("/admin/commission-payment-account", "PUT", admin, {
+        bankCode: "x",
+        accountNumber: "123",
+        accountHolder: "x",
+      })
+    ).status,
+    422,
+  );
+  const adminAccount = await send("/admin/commission-payment-account", "PUT", admin, {
+    bankCode: "MBBank",
+    accountNumber: "9876543210",
+    accountHolder: "PACE CAR",
+  });
+  assert.equal(adminAccount.status, 200, json(adminAccount.body));
+  const commissionPayment = await send(
+    `/owner/commissions/${record.id}/payment`,
+    "POST",
+    owner,
+  );
+  assert.equal(commissionPayment.status, 201, json(commissionPayment.body));
+  assert.equal(commissionPayment.body.amount, expected.amount);
+  assert.equal(commissionPayment.body.recipient.accountNumber, "9876543210");
+  assert.equal(
+    new URL(commissionPayment.body.qrUrl).origin,
+    "https://qr.sepay.vn",
+  );
+  const repeatedPayment = await send(
+    `/owner/commissions/${record.id}/payment`,
+    "POST",
+    owner,
+  );
+  assert.equal(repeatedPayment.status, 200);
+  assert.equal(repeatedPayment.body.id, commissionPayment.body.id);
+  assert.equal(
+    (await request("/admin/commission-payments", { token: owner })).status,
+    403,
+  );
+  assert.equal(
+    (await request("/admin/commission-payments", { token: admin })).body.some(
+      (item) => item.id === commissionPayment.body.id,
+    ),
+    true,
+  );
+  const confirmedPayment = await send(
+    `/admin/commission-payments/${commissionPayment.body.id}/confirm`,
+    "POST",
+    admin,
+  );
+  assert.equal(confirmedPayment.status, 200);
+  assert.equal(confirmedPayment.body.status, "Paid");
+  assert.equal(
+    (
+      await send(
+        `/admin/commission-payments/${commissionPayment.body.id}/confirm`,
+        "POST",
+        admin,
+      )
+    ).status,
+    200,
+    "payment confirmation is idempotent",
+  );
+  const ownerCommissionsAfterPayment = (
+    await request("/owner/commissions", { token: owner })
+  ).body;
+  assert.equal(
+    ownerCommissionsAfterPayment.find((item) => item.id === record.id).status,
+    "Paid",
+  );
+  assert.equal(
+    (await request("/admin/commissions", { token: admin })).body.some(
+      (item) => item.id === record.id && item.ownerName,
+    ),
+    true,
+  );
+
+  // Legacy completed bookings are not charged retroactively.
   const db = stored();
   db.bookings.push({
     id: 9001, renterId: 1, ownerId: 4, carId: 2, status: "Completed",
@@ -478,7 +578,12 @@ try {
     totalPrice: 700000, deposit: 1000000, paymentStatus: "Paid",
   });
   fs.writeFileSync(dbFile, JSON.stringify(db));
-  assert.equal((await send("/admin/bookings/9001/commission", "POST", admin)).status, 422);
+  assert.equal(
+    (await request("/owner/commissions", { token: owner })).body.some(
+      (item) => item.bookingId === 9001,
+    ),
+    false,
+  );
   assert.equal((await send("/bookings/9001/price-revisions", "POST", owner, { reason: "valid reason", otherFee: 1, otherFeeLabel: "x" })).status, 409);
   assert.equal((await request("/bookings/9001", { token: renter })).status, 200, "legacy booking still readable");
 
@@ -574,7 +679,7 @@ try {
   // Legacy users without the field keep logging in.
   assert.equal((await send("/auth/login", "POST", null, { email: "renter@pacecar.vn", password: "123456" })).status, 200);
 
-  console.log("PaceCar terms, price confirmation, refund record, report and commission-trial tests passed.");
+  console.log("PaceCar terms, price confirmation, refund record, report and commission payment tests passed.");
 } finally {
   if (server.exitCode === null) {
     server.kill();

@@ -68,7 +68,7 @@ Backend đọc cấu hình từ environment variables. `.env.example` liệt kê
 | `TRUST_PROXY` | `loopback` — cấu hình proxy tin cậy |
 | `PACECAR_DB_FILE` | Mặc định `server/src/data/db.json` |
 | `DATABASE_URL` | Nếu có, dùng PostgreSQL thay cho JSON; phải nhập dữ liệu trước lần khởi chạy đầu |
-| `PACECAR_UPLOAD_DIR` | Mặc định `server/uploads` |
+| `PACECAR_UPLOAD_DIR` | Mặc định `server/uploads`; chứa ảnh tin xe và tài liệu riêng tư, còn ảnh bằng chứng tranh chấp dùng PostgreSQL nếu có `DATABASE_URL` |
 | `EMAIL_VERIFICATION_ENABLED` | Tắt mặc định; cần cấu hình SMTP để gửi mã xác minh |
 
 ## Kiểm thử và tài liệu
