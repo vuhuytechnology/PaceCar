@@ -1082,6 +1082,32 @@ try {
   assert.equal(submittedCar.status, 201, JSON.stringify(submittedCar.body));
   assert.equal(submittedCar.body.listingStatus, "Pending Review");
   assert.equal(submittedCar.body.demoOnly, false);
+  const photoOnlyDraft = await request("/cars", {
+    method: "POST",
+    token: registeredOwner.body.token,
+    body: JSON.stringify({
+      ...qaListing,
+      name: "QA Photo-only Submission Car",
+      licensePlate: "30A-QA124",
+      submitForReview: false,
+    }),
+  });
+  assert.equal(photoOnlyDraft.status, 201, JSON.stringify(photoOnlyDraft.body));
+  assert.equal(photoOnlyDraft.body.listingStatus, "Draft");
+  const photoOnlySubmission = await request(
+    `/cars/${photoOnlyDraft.body.id}/listing-status`,
+    {
+      method: "PUT",
+      token: registeredOwner.body.token,
+      body: JSON.stringify({ status: "Pending Review" }),
+    },
+  );
+  assert.equal(
+    photoOnlySubmission.status,
+    200,
+    JSON.stringify(photoOnlySubmission.body),
+  );
+  assert.equal(photoOnlySubmission.body.listingStatus, "Pending Review");
   const ownerDocsBeforeRequest = await request(
     `/cars/${submittedCar.body.id}`,
     {

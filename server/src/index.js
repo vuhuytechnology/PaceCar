@@ -2090,7 +2090,7 @@ app.put(
           message: `Không thể chuyển từ ${car.listingStatus} sang ${target}`,
         });
       if (target === "Pending Review") {
-        const errors = listingErrors(car, true);
+        const errors = listingErrors(car);
         if (errors.length)
           return s
             .status(422)
