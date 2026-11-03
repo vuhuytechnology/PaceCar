@@ -865,6 +865,8 @@ app.post("/api/analytics/page-view", pageViewLimiter, (q, s) => {
   );
   data.analytics ||= {};
   data.analytics.dailyPageViews ||= [];
+  data.analytics.totalPageViews =
+    (Number(data.analytics.totalPageViews) || 0) + 1;
   let daily = data.analytics.dailyPageViews.find((item) => item.date === today);
   if (!daily) {
     daily = { date: today, count: 0 };
@@ -954,6 +956,8 @@ app.get("/api/admin/analytics", requireRole(["admin"]), (q, s) => {
     periodDays: days,
     summary: {
       pageViews: daily.reduce((total, item) => total + item.pageViews, 0),
+      pageViewsToday: viewCounts.get(analyticsDateKey(now)) || 0,
+      totalPageViews: Number(data.analytics?.totalPageViews) || 0,
       registrations: daily.reduce(
         (total, item) => total + item.registrations,
         0,

@@ -126,6 +126,20 @@ export default function AdminAnalytics() {
   const { summary, daily } = data;
   const cards = [
     {
+      title: "Lượt truy cập hôm nay",
+      value: number(summary.pageViewsToday),
+      note: "Lượt mở trang theo ngày VN",
+      icon: CalendarDays,
+      tone: "bg-cyan-50 text-cyan-600",
+    },
+    {
+      title: "Lượt truy cập tổng",
+      value: number(summary.totalPageViews),
+      note: "Tích lũy từ khi bật thống kê",
+      icon: Eye,
+      tone: "bg-indigo-50 text-indigo-600",
+    },
+    {
       title: "Lượt xem trang",
       value: number(summary.pageViews),
       note: `Trong ${days} ngày`,

@@ -115,6 +115,8 @@ try {
   assert.equal(initialAnalytics.status, 200);
   assert.equal(initialAnalytics.body.daily.length, 7);
   assert.equal(initialAnalytics.body.summary.pageViews, 2);
+  assert.equal(initialAnalytics.body.summary.pageViewsToday, 2);
+  assert.equal(initialAnalytics.body.summary.totalPageViews, 2);
   assert.ok(initialAnalytics.body.summary.activeUsers >= 1);
   assert.equal(
     (await request("/admin/analytics?days=14", { token: admin })).status,

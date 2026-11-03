@@ -146,6 +146,13 @@ function migrateData(data) {
     data.analytics.dailyPageViews = [];
     changed = true;
   }
+  if (!Number.isSafeInteger(data.analytics.totalPageViews)) {
+    data.analytics.totalPageViews = data.analytics.dailyPageViews.reduce(
+      (total, item) => total + Math.max(0, Number(item.count) || 0),
+      0,
+    );
+    changed = true;
+  }
   data.sessions ||= [];
   const storedSessionCount = data.sessions.length;
   const activeSessions = data.sessions
