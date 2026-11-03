@@ -3525,6 +3525,24 @@ export function Contract() {
       )}
       <PriceConfirmationPanel booking={b} user={user} reload={reload} />
       <DepositRefundPanel booking={b} user={user} reload={reload} />
+      {c.renterSigned &&
+        c.ownerSigned &&
+        ["Contract Signed", "Ready for Check-in"].includes(b.status) && (
+          <section className="card mb-5 border-blue-200 bg-blue-50 p-5">
+            <h2 className="font-bold text-blue-900">
+              Bước tiếp theo: ghi nhận lúc nhận xe
+            </h2>
+            <p className="mt-2 text-sm text-blue-800">
+              Hẹn chủ xe và mở biên bản giao nhận. Khách ghi ảnh, ODO và nhiên
+              liệu/pin; chủ xe đối chiếu CCCD/GPLX, VNeID, tài sản bảo đảm và
+              checklist bàn giao. Chuyến chỉ bắt đầu sau khi chủ xe xác nhận.
+              Không tải video hoặc giấy tờ định danh lên website.
+            </p>
+            <Button as={Link} to={`/evidence/${b.id}`} className="mt-4">
+              Mở biên bản giao nhận
+            </Button>
+          </section>
+        )}
       <article className="card bg-white p-8 sm:p-12">
         <div className="border-b pb-7 text-center">
           <p className="text-2xl font-extrabold text-brand-700">PACECAR</p>

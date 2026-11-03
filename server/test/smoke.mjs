@@ -1020,15 +1020,10 @@ try {
   assert.equal(ownerSign.body.status, "Signed");
   assert.equal(ownerSign.body.booking.status, "Contract Signed");
 
-  const readyForCheckin = await request(
-    `/bookings/${booking.body.id}/status`,
-    {
-      method: "PUT",
-      token: owner,
-      body: JSON.stringify({ status: "Ready for Check-in" }),
-    },
-  );
-  assert.equal(readyForCheckin.status, 200);
+  const signedBooking = await request(`/bookings/${booking.body.id}`, {
+    token: owner,
+  });
+  assert.equal(signedBooking.body.status, "Contract Signed");
   const journeyEvidenceUpload = new FormData();
   journeyEvidenceUpload.append(
     "files",
@@ -1061,7 +1056,7 @@ try {
     (
       await request(`/bookings/${booking.body.id}`, { token: owner })
     ).body.status,
-    "Ready for Check-in",
+    "Contract Signed",
   );
   const ownerHandoverUpload = new FormData();
   ownerHandoverUpload.append(
@@ -1167,7 +1162,7 @@ try {
   );
   assert.ok(
     journeyTimeline.body.some(
-      (event) => event.detail?.includes("Ready for Check-in"),
+      (event) => event.detail?.includes("Contract Signed"),
     ),
   );
   assert.ok(

@@ -41,6 +41,7 @@ const contractStatuses = new Set([
   "Dispute",
 ]);
 const evidenceStatuses = new Set([
+  "Contract Signed",
   "Ready for Check-in",
   "Ongoing",
   "Check-out Review",

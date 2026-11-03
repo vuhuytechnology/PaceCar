@@ -172,7 +172,6 @@ try {
     assert.equal((await send("/contracts", "POST", owner, { bookingId: id })).status, 201);
     for (const token of [renter, owner])
       assert.equal((await send(`/contracts/${id}/sign`, "PUT", token, { consent: true })).status, 200);
-    assert.equal((await send(`/bookings/${id}/status`, "PUT", owner, { status: "Ready for Check-in" })).status, 200);
     const form = new FormData();
     form.append("files", new Blob([Buffer.from("89504e470d0a1a0a", "hex")], { type: "image/png" }), "e.png");
     form.append("bookingId", String(id));
