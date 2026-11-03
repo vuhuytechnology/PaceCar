@@ -186,7 +186,7 @@ function validateListingStep(form, step) {
   }
   if (step === 3) {
     const errors = [];
-    if (form.photos.length < 3) errors.push("Cần tải lên ít nhất 3 ảnh xe");
+    if (form.photos.length < 2) errors.push("Cần tải lên ít nhất 2 ảnh xe");
     if (form.photos.length > 10) errors.push("Chỉ được tải lên tối đa 10 ảnh");
     if (form.documentsRequestedAt)
       for (const [type, label] of [
@@ -817,7 +817,7 @@ export function CarListingWizard() {
                 : "Ảnh xe được công khai sau khi admin duyệt. Chỉ cần tải ảnh ở bước này; admin sẽ yêu cầu giấy tờ riêng tư nếu cần."}
             </p>
             <div className="mt-6">
-              <label className="label">Ảnh xe (3–10 ảnh) *</label>
+              <label className="label">Ảnh xe (2–10 ảnh) *</label>
               {!documentsOnly && (
                 <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-brand-200 bg-brand-50/50 p-6 text-brand-700">
                   <ImagePlus />
@@ -953,7 +953,7 @@ export function CarListingWizard() {
                     form.licensePlate
                   ),
                 ],
-                ["Ảnh xe", form.photos.length >= 3],
+                ["Ảnh xe", form.photos.length >= 2],
               ].map(([label, ok]) => (
                 <div
                   className={`rounded-xl p-4 text-sm font-semibold ${ok ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}

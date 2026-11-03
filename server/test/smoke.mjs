@@ -1108,6 +1108,29 @@ try {
     JSON.stringify(photoOnlySubmission.body),
   );
   assert.equal(photoOnlySubmission.body.listingStatus, "Pending Review");
+  const twoPhotoSubmission = await request("/cars", {
+    method: "POST",
+    token: registeredOwner.body.token,
+    body: JSON.stringify({
+      ...qaListing,
+      name: "QA Two-photo Submission Car",
+      licensePlate: "30A-QA125",
+      photos: qaListing.photos.slice(0, 2),
+      submitForReview: true,
+    }),
+  });
+  assert.equal(twoPhotoSubmission.status, 201, JSON.stringify(twoPhotoSubmission.body));
+  assert.equal(twoPhotoSubmission.body.listingStatus, "Pending Review");
+  const twoPhotoPublication = await request(
+    `/cars/${twoPhotoSubmission.body.id}/listing-status`,
+    {
+      method: "PUT",
+      token: admin,
+      body: JSON.stringify({ status: "Published" }),
+    },
+  );
+  assert.equal(twoPhotoPublication.status, 422);
+  assert.ok(twoPhotoPublication.body.errors.includes("Cần ít nhất 3 ảnh xe"));
   const ownerDocsBeforeRequest = await request(
     `/cars/${submittedCar.body.id}`,
     {
