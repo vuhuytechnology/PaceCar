@@ -1877,10 +1877,6 @@ app.post("/api/cars", requireRole(["owner"]), (q, s) => {
     const errors = listingErrors(x);
     if (errors.length)
       return s.status(422).json({ message: "Tin đăng chưa đầy đủ", errors });
-    if (!q.authUser.verified)
-      return s
-        .status(403)
-        .json({ message: "Chủ xe cần xác thực trước khi gửi duyệt" });
     x.listingStatus = "Pending Review";
     x.submittedAt = new Date().toISOString();
   }
@@ -2099,10 +2095,6 @@ app.put(
           return s
             .status(422)
             .json({ message: "Tin đăng chưa đầy đủ", errors });
-        if (!q.authUser.verified)
-          return s
-            .status(403)
-            .json({ message: "Tài khoản chủ xe chưa xác thực" });
         car.submittedAt = new Date().toISOString();
         car.verified = false;
       }

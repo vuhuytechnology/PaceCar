@@ -315,6 +315,7 @@ try {
   });
   assert.equal(registeredOwner.status, 201);
   assert.equal(registeredOwner.body.role, "owner");
+  assert.equal(registeredOwner.body.verified, false);
   assert.equal("token" in registeredOwner.body, true);
 
   const loggedOutRegistration = await request("/auth/logout", {
@@ -1037,7 +1038,7 @@ try {
     );
   const carPhotos = await request("/uploads/cars", {
     method: "POST",
-    token: owner,
+    token: registeredOwner.body.token,
     body: uploadedCarPhotos,
   });
   assert.equal(carPhotos.status, 201, JSON.stringify(carPhotos.body));
@@ -1071,7 +1072,7 @@ try {
   };
   const submittedCar = await request("/cars", {
     method: "POST",
-    token: owner,
+    token: registeredOwner.body.token,
     body: JSON.stringify({
       ...qaListing,
       demoOnly: true,
@@ -1085,7 +1086,7 @@ try {
     `/cars/${submittedCar.body.id}`,
     {
       method: "PUT",
-      token: owner,
+      token: registeredOwner.body.token,
       body: JSON.stringify({ documents: [] }),
     },
   );
@@ -1122,7 +1123,7 @@ try {
     `/uploads/documents?carId=${submittedCar.body.id}`,
     {
       method: "POST",
-      token: owner,
+      token: registeredOwner.body.token,
       body: prematureDocumentUpload,
     },
   );
@@ -1155,7 +1156,7 @@ try {
     `/uploads/documents?carId=${submittedCar.body.id}`,
     {
     method: "POST",
-    token: owner,
+    token: registeredOwner.body.token,
     body: documentUpload,
     },
   );
@@ -1166,7 +1167,7 @@ try {
   );
   const submittedDocuments = await request(`/cars/${submittedCar.body.id}`, {
     method: "PUT",
-    token: owner,
+    token: registeredOwner.body.token,
     body: JSON.stringify({
       documents: [
         {
@@ -1199,11 +1200,24 @@ try {
     `/cars/${submittedCar.body.id}/listing-status`,
     {
       method: "PUT",
-      token: owner,
+      token: registeredOwner.body.token,
       body: JSON.stringify({ status: "Paused" }),
     },
   );
   assert.equal(pausedCar.status, 200, JSON.stringify(pausedCar.body));
+  const resubmittedCar = await request(
+    `/cars/${submittedCar.body.id}/listing-status`,
+    {
+      method: "PUT",
+      token: registeredOwner.body.token,
+      body: JSON.stringify({ status: "Pending Review" }),
+    },
+  );
+  assert.equal(
+    resubmittedCar.status,
+    200,
+    JSON.stringify(resubmittedCar.body),
+  );
 
   const favorite = await request("/favorites/1", {
     method: "POST",
