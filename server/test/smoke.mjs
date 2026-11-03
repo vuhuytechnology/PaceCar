@@ -28,6 +28,7 @@ const server = spawn(process.execPath, ["src/index.js"], {
     DATABASE_URL: "",
     PACECAR_DB_FILE: dbFile,
     PACECAR_UPLOAD_DIR: path.join(tempDir, "uploads"),
+    EMAIL_VERIFICATION_ENABLED: "false",
     CLIENT_ORIGIN: "http://localhost:5173",
   },
   stdio: ["ignore", "pipe", "pipe"],

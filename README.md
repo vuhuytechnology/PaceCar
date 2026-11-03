@@ -94,6 +94,8 @@ Các màn tải ảnh chấp nhận JPG, PNG, WEBP và HEIC/HEIF; HEIC/HEIF đư
 
 Bộ chuyển đổi HEIC dùng `heic-to` 1.6.7 theo LGPL-3.0-or-later; xem [các thông báo và giấy phép](./client/public/licenses/index.html) cùng [mã nguồn upstream](https://github.com/hoppergee/heic-to).
 
+Môi trường demo Render tắt xác thực email để phục vụ tài khoản thử nghiệm; không dùng cấu hình này cho dịch vụ có người dùng thật.
+
 Khi không có `DATABASE_URL`, dịch vụ tiếp tục dùng JSON như trước. Với PostgreSQL, dữ liệu ứng dụng hiện được lưu thành một tài liệu JSONB đơn và chỉ hỗ trợ một instance ứng dụng; tệp tải lên vẫn cần persistent disk hoặc object storage. Xem [hướng dẫn PostgreSQL](./docs/POSTGRESQL.md) trước khi chuyển môi trường đang chạy.
 
 ## Cấu trúc dự án

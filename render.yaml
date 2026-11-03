@@ -12,5 +12,7 @@ services:
         value: production
       - key: TRUST_PROXY
         value: "1"
+      - key: EMAIL_VERIFICATION_ENABLED
+        value: "false"
       - key: DATABASE_URL
         sync: false
