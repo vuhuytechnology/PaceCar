@@ -694,6 +694,7 @@ function LegacyCars() {
         >
           <option value="">Mọi loại xe</option>
           <option>Sedan</option>
+          <option>Coupe</option>
           <option>SUV</option>
           <option>MPV</option>
           <option>Hatchback</option>
@@ -901,6 +902,7 @@ export function Cars() {
                 >
                   <option value="">Tất cả</option>
                   <option>Sedan</option>
+                  <option>Coupe</option>
                   <option>SUV</option>
                   <option>MPV</option>
                   <option>Hatchback</option>

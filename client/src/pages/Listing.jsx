@@ -543,6 +543,7 @@ export function CarListingWizard() {
                 onChange={(e) => set("type", e.target.value)}
               >
                 <option>Sedan</option>
+                <option>Coupe</option>
                 <option>SUV</option>
                 <option>MPV</option>
                 <option>Hatchback</option>
