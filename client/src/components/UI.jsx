@@ -822,6 +822,12 @@ export function Footer() {
             <Link className="footer-link hover:text-pace-blue" to="/help">
               Hỗ trợ tranh chấp
             </Link>
+            <a
+              className="footer-link hover:text-pace-blue"
+              href="/licenses/index.html"
+            >
+              Giấy phép bộ chuyển đổi HEIC
+            </a>
           </nav>
         </div>
         <div className="flex flex-col gap-3 md:w-[98px] md:shrink-0">

@@ -824,12 +824,13 @@ export function CarListingWizard() {
                     {uploading ? "Đang tải lên..." : "Chọn ảnh xe"}
                   </b>
                   <span className="text-xs">
-                    JPG, PNG, WEBP · tối đa 5 MB/ảnh
+                    JPG, PNG, WEBP, HEIC/HEIF (tự chuyển JPEG) · tối đa 5
+                    MB/ảnh sau chuyển đổi
                   </span>
                   <input
                     type="file"
                     multiple
-                    accept="image/jpeg,image/png,image/webp"
+                    accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
                     className="hidden"
                     onChange={(e) => addPhotos([...e.target.files])}
                   />
@@ -890,11 +891,13 @@ export function CarListingWizard() {
                       {" *"}
                     </b>
                     <span className="text-xs text-slate-500">
-                      {doc ? doc.name : "Ảnh hoặc PDF · tối đa 8 MB"}
+                      {doc
+                        ? doc.name
+                        : "Ảnh JPG, PNG, WEBP, HEIC/HEIF hoặc PDF · tối đa 8 MB"}
                     </span>
                     <input
                       type="file"
-                      accept="image/jpeg,image/png,image/webp,application/pdf"
+                      accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif,application/pdf"
                       className="hidden"
                       onChange={(e) => addDocument(type, [...e.target.files])}
                     />

@@ -78,6 +78,11 @@ async function login(email, password = "123456") {
 
 try {
   await waitForServer();
+  const cspResponse = await fetch(`${base}/health`);
+  assert.match(
+    cspResponse.headers.get("content-security-policy") || "",
+    /worker-src[^;]*blob:/,
+  );
   const renter = await login("renter@pacecar.vn");
   const owner = await login("owner@pacecar.vn");
   const unrelatedOwner = await login("tung@pacecar.vn");

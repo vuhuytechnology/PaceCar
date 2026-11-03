@@ -18,6 +18,7 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         imgSrc: ["'self'", "data:", "https:"],
+        workerSrc: ["'self'", "blob:"],
       },
     },
     crossOriginResourcePolicy: { policy: "cross-origin" },

@@ -90,6 +90,10 @@ Dự án có cấu hình Render Blueprint tại [`render.yaml`](./render.yaml). 
 
 Chủ xe gửi tin với ảnh trước; admin xem hồ sơ và có thể yêu cầu bổ sung đăng ký xe, bảo hiểm qua thông báo. Chủ xe tải giấy tờ trong mục riêng tư của tin đang chờ duyệt; chỉ admin được xem và duyệt công khai sau khi nhận đủ hồ sơ.
 
+Các màn tải ảnh chấp nhận JPG, PNG, WEBP và HEIC/HEIF; HEIC/HEIF được chuyển sang JPEG ngay trên trình duyệt trước khi gửi lên. Giấy tờ vẫn hỗ trợ PDF.
+
+Bộ chuyển đổi HEIC dùng `heic-to` 1.6.7 theo LGPL-3.0-or-later; xem [các thông báo và giấy phép](./client/public/licenses/index.html) cùng [mã nguồn upstream](https://github.com/hoppergee/heic-to).
+
 Khi không có `DATABASE_URL`, dịch vụ tiếp tục dùng JSON như trước. Với PostgreSQL, dữ liệu ứng dụng hiện được lưu thành một tài liệu JSONB đơn và chỉ hỗ trợ một instance ứng dụng; tệp tải lên vẫn cần persistent disk hoặc object storage. Xem [hướng dẫn PostgreSQL](./docs/POSTGRESQL.md) trước khi chuyển môi trường đang chạy.
 
 ## Cấu trúc dự án

@@ -1,5 +1,56 @@
 const BASE = "/api";
 
+const isHeicFile = (file) =>
+  /\.(heic|heif)$/i.test(file.name) || /^image\/hei[cf]/i.test(file.type);
+
+async function prepareUploads(form) {
+  const entries = Array.from(form.entries());
+  if (
+    !entries.some(
+      ([, value]) => typeof value !== "string" && isHeicFile(value),
+    )
+  )
+    return form;
+
+  const { heicTo } = await import("heic-to/csp");
+  const prepared = new FormData();
+  for (const [name, value] of entries) {
+    if (typeof value === "string" || !isHeicFile(value)) {
+      prepared.append(name, value);
+      continue;
+    }
+
+    let converted;
+    try {
+      converted = await heicTo({
+        blob: value,
+        type: "image/jpeg",
+        quality: 0.9,
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? `: ${error.message}` : "";
+      throw new Error(
+        `Không thể chuyển ảnh HEIC/HEIF "${value.name}" sang JPEG${detail}`,
+        { cause: error },
+      );
+    }
+    if (!(converted instanceof Blob))
+      throw new Error(`Không thể chuyển ảnh "${value.name}" sang JPEG`);
+
+    const filename = /\.(heic|heif)$/i.test(value.name)
+      ? value.name.replace(/\.(heic|heif)$/i, ".jpg")
+      : `${value.name || "image"}.jpg`;
+    prepared.append(
+      name,
+      new File([converted], filename, {
+        type: "image/jpeg",
+        lastModified: value.lastModified,
+      }),
+    );
+  }
+  return prepared;
+}
+
 function redirectToLogin() {
   localStorage.removeItem("pacecar-user");
   localStorage.removeItem("pacecar-token");
@@ -20,12 +71,17 @@ async function responseError(response) {
 }
 
 export async function api(path, options = {}) {
+  const body =
+    options.body instanceof FormData
+      ? await prepareUploads(options.body)
+      : options.body;
   let r;
   try {
     const token = localStorage.getItem("pacecar-token");
-    const isForm = options.body instanceof FormData;
+    const isForm = body instanceof FormData;
     r = await fetch(BASE + path, {
       ...options,
+      body,
       headers: {
         ...(isForm ? {} : { "Content-Type": "application/json" }),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),

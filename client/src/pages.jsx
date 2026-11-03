@@ -3725,11 +3725,11 @@ export function Evidence() {
                 <label className="mt-4 block rounded-xl border border-dashed border-brand-300 bg-brand-50 p-4 text-sm text-brand-700">
                   <b>Chọn ảnh giao nhận</b>
                   <span className="mt-1 block text-xs">
-                    JPG, PNG hoặc WEBP · tối đa 6 ảnh
+                    JPG, PNG, WEBP, HEIC/HEIF (tự chuyển JPEG) · tối đa 6 ảnh
                   </span>
                   <input
                     type="file"
-                    accept="image/jpeg,image/png,image/webp"
+                    accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
                     multiple
                     className="mt-3 block w-full text-xs"
                     onChange={(event) =>
@@ -4002,7 +4002,7 @@ export function Dispute() {
                 <b>Ảnh bằng chứng</b>
                 <input
                   type="file"
-                  accept="image/jpeg,image/png,image/webp"
+                  accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
                   multiple
                   className="mt-3 block w-full text-xs"
                   onChange={(event) =>
@@ -4012,7 +4012,7 @@ export function Dispute() {
                 <span className="mt-2 block text-xs">
                   {files.length
                     ? `Đã chọn ${files.length} ảnh`
-                    : "Bắt buộc ít nhất một ảnh · tối đa 6 ảnh"}
+                    : "Bắt buộc ít nhất một ảnh · tối đa 6 ảnh (HEIC/HEIF sẽ tự chuyển JPEG)"}
                 </span>
               </label>
               <Button type="submit" disabled={submitting || !desc.trim()}>
