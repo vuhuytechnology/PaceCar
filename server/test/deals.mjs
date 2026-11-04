@@ -518,6 +518,7 @@ try {
   // Complete a journey: deposit refund (form C) and commission
   const rental = await bookingFor("2028-05-01", "2028-05-04");
   const rentalId = rental.booking.id;
+  const staleQuote = await quoteFor("2028-05-10", "2028-05-11");
   const refundPath = `/bookings/${rentalId}/deposit-refund`;
   assert.equal(
     (await send(refundPath, "POST", owner, { refundAmount: 0, deductionAmount: rental.quote.deposit, reason: "too early" })).status,
@@ -532,6 +533,56 @@ try {
     "commission is not due before completion",
   );
   await completeBooking(rentalId);
+  const blockedCarSearch = await request(
+    "/search/cars?startDate=2028-05-10&startTime=08%3A00&endDate=2028-05-11&endTime=20%3A00&limit=24",
+  );
+  assert.equal(
+    blockedCarSearch.body.items.some((car) => car.id === rental.booking.carId),
+    false,
+    "car is omitted from date-based search until commission is paid",
+  );
+  assert.equal(
+    (
+      await request(`/cars/${rental.booking.carId}`)
+    ).body.bookingBlockedByCommission,
+    true,
+  );
+  assert.equal(
+    (
+      await request(`/cars/${rental.booking.carId}/availability`)
+    ).body.blockedByCommission,
+    true,
+  );
+  assert.equal(
+    (
+      await send("/quotes", "POST", renter, {
+        carId: rental.booking.carId,
+        startDate: "2028-05-10",
+        startTime: "08:00",
+        endDate: "2028-05-11",
+        endTime: "20:00",
+        driverOption: "self",
+        pickupOption: "pickup",
+      })
+    ).status,
+    409,
+    "new quotes are blocked while the car has an unpaid commission",
+  );
+  assert.equal(
+    (
+      await request("/bookings", {
+        method: "POST",
+        token: renter,
+        headers: { "Idempotency-Key": `stale-commission-${rentalId}` },
+        body: json({
+          quoteId: staleQuote.quoteId,
+          consent: consent(staleQuote),
+        }),
+      })
+    ).status,
+    409,
+    "stale quotes cannot create bookings after a commission becomes due",
+  );
   const deposit = rental.quote.deposit;
   assert.ok(deposit > 100);
   assert.equal((await send(refundPath, "POST", owner, { refundAmount: deposit, deductionAmount: 1 })).status, 422);
@@ -664,6 +715,23 @@ try {
   );
   assert.equal(confirmedPayment.status, 200);
   assert.equal(confirmedPayment.body.status, "Paid");
+  assert.equal(
+    (
+      await request(`/cars/${rental.booking.carId}`)
+    ).body.bookingBlockedByCommission,
+    false,
+    "admin confirmation releases the car",
+  );
+  const releasedCarQuote = await quoteFor("2028-05-10", "2028-05-11");
+  assert.ok(releasedCarQuote.quoteId);
+  const releasedCarSearch = await request(
+    "/search/cars?startDate=2028-05-10&startTime=08%3A00&endDate=2028-05-11&endTime=20%3A00&limit=24",
+  );
+  assert.equal(
+    releasedCarSearch.body.items.some((car) => car.id === rental.booking.carId),
+    true,
+    "car is available again after admin confirms commission payment",
+  );
   const dashboardRevenueAfter = (
     await request("/dashboard/admin", { token: admin })
   ).body.stats;

@@ -8,7 +8,7 @@ Trạng thái: **đã tích hợp và kiểm thử cục bộ; CHƯA deploy prod
 |---|---|---|---|
 | Phí nền tảng | Báo giá người thuê không cộng hoa hồng (`platformFeeRate = 0`) | Hoa hồng thu từ **chủ xe** 3–5%, không thu người thuê | Áp dụng mức 5% / 4% / 3%; QR SePay chuyển vào tài khoản PaceCar, admin đối chiếu thủ công |
 | Tiền thuê còn lại | Người thuê chuyển cho chủ xe sau khi hai bên ký hợp đồng | Cọc hoàn lại là khoản bảo đảm riêng | QR theo `totalPrice`, không trừ cọc; chủ xe xác nhận trước khi chuyến chuyển sang `Ongoing`; booking cũ không theo dõi hồi tố |
-| Hoa hồng | Ghi nhận phải thu khi booking mới chuyển sang `Completed` | Chủ xe chịu hoa hồng theo mức bậc | Tự tạo một khoản phải thu duy nhất cho mỗi booking; không tính hồi tố booking đã hoàn tất trước khi triển khai |
+| Hoa hồng | Ghi nhận phải thu khi booking mới chuyển sang `Completed` | Chủ xe chịu hoa hồng theo mức bậc | Tự tạo một khoản phải thu duy nhất cho mỗi booking; không tính hồi tố booking đã hoàn tất trước khi triển khai; khóa xe nhận booking mới đến khi admin xác nhận đã thu |
 | "Giao dịch thành công" | `Completed` | Booking hoàn tất | Tạo khoản hoa hồng khi trạng thái chuyển lần đầu sang `Completed` |
 | Làm tròn | Half-up về VNĐ nguyên | – | Dùng `half-up-vnd` |
 | Thành phần cơ sở tính | `pricingSnapshot.baseRental` (ngày × giá/ngày) | "Tổng tiền thuê cơ bản" | Không gồm giao xe, cọc, bảo hiểm, phụ phí cuối tuần/tài xế, giảm giá dài ngày/khuyến mãi |

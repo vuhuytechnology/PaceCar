@@ -38,6 +38,7 @@ Các bản ghi cũ có `paymentStatus: "Paid"` được giữ nguyên; ứng d�
 - Hoa hồng được ghi nhận khi booking **lần đầu chuyển sang `Completed`**. Các booking đã hoàn tất trước khi bật luồng này không bị tính hồi tố.
 - Cơ sở tính là `pricingSnapshot.baseRental` (số ngày × giá thuê/ngày). Mức áp dụng cho toàn bộ cơ sở tính: dưới 1.000.000đ là 5%; từ 1.000.000đ đến dưới 2.000.000đ là 4%; từ 2.000.000đ là 3%. Làm tròn half-up đến đồng Việt Nam.
 - Chủ xe không trả thêm hoa hồng qua báo giá thuê; khoản hoa hồng là một khoản riêng phát sinh sau chuyến.
+- Nếu xe có khoản hoa hồng phải thu (`Due` hoặc `Pending`), xe tạm ngưng nhận booking mới trên tìm kiếm/lịch trống. Sau khi admin xác nhận đã nhận tiền, xe tự động nhận booking lại; lịch sử booking cũ vẫn được giữ nguyên.
 - Admin đăng nhập **Trung tâm quản trị → Tài khoản nhận hoa hồng SePay** để cấu hình ngân hàng, số tài khoản và tên chủ tài khoản nhận tiền của PaceCar.
 - Chủ xe mở **Đơn thuê xe → Hoa hồng nền tảng**, tạo QR và chuyển đúng số tiền cùng nội dung chuyển khoản hiển thị.
 - Admin đối chiếu sao kê tài khoản nhận tiền theo đúng số tiền và mã chuyển khoản, sau đó chọn **Xác nhận đã nhận tiền**. Không xác nhận dựa trên ảnh chụp do chủ xe gửi.

@@ -162,6 +162,11 @@ export function CarCard({ car, onRemoveFavorite, removing = false }) {
             <VerifiedBadge />
           </div>
         )}
+        {car.bookingBlockedByCommission && (
+          <span className="absolute bottom-3 left-3 rounded-lg bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900">
+            Tạm ngưng · chờ đối soát hoa hồng
+          </span>
+        )}
         {onRemoveFavorite && (
           <button
             type="button"

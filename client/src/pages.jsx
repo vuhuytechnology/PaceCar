@@ -504,6 +504,11 @@ export function Landing() {
             <FeaturedCarCard
               car={car}
               key={car.id}
+              badges={
+                car.bookingBlockedByCommission
+                  ? ["Tạm ngưng · chờ đối soát hoa hồng"]
+                  : []
+              }
               onFavorite={() => favorite(car)}
             />
           ))}
@@ -1019,6 +1024,8 @@ export function Cars() {
                     badges={[
                       car.instantBooking && "Đặt nhanh",
                       car.deliveryOptions?.ownerDelivery && "Giao xe",
+                      car.bookingBlockedByCommission &&
+                        "Tạm ngưng · chờ đối soát hoa hồng",
                     ].filter(Boolean)}
                     onFavorite={() => favorite(car)}
                   />
@@ -1297,6 +1304,15 @@ export function CarDetail() {
   const [photo, setPhoto] = useState(0);
   const requestQuote = async (code = appliedPromo, preserveOnError = false) => {
     if (!car || car.demoOnly) return;
+    if (car.bookingBlockedByCommission) {
+      quoteRequest.current += 1;
+      setQuote(null);
+      setQuoteError(
+        "Xe đang tạm ngưng nhận booking đến khi PaceCar xác nhận đã nhận hoa hồng cho chuyến trước",
+      );
+      setQuoting(false);
+      return;
+    }
     if (
       pickupOption === "delivery" &&
       (!deliveryAddress.trim() ||
@@ -1374,6 +1390,12 @@ export function CarDetail() {
     if (car?.demoOnly) {
       setQuote(null);
       setQuoteError("");
+      setQuoting(false);
+    } else if (car?.bookingBlockedByCommission) {
+      setQuote(null);
+      setQuoteError(
+        "Xe đang tạm ngưng nhận booking đến khi PaceCar xác nhận đã nhận hoa hồng cho chuyến trước",
+      );
       setQuoting(false);
     } else if (car) requestQuote(appliedPromo);
     return () => {
@@ -1548,6 +1570,11 @@ export function CarDetail() {
                   {car.demoOnly && (
                     <span className="pb-1 text-[11px] font-extrabold uppercase leading-[23px] text-amber-700">
                       DEMO NỘI BỘ · CHỈ TRƯNG BÀY
+                    </span>
+                  )}
+                  {car.bookingBlockedByCommission && (
+                    <span className="pb-1 text-[11px] font-extrabold uppercase leading-[23px] text-amber-700">
+                      Tạm ngưng nhận booking · chờ đối soát hoa hồng
                     </span>
                   )}
                   {car.verified && (
@@ -1933,7 +1960,12 @@ export function CarDetail() {
                   </div>
                 </div>
               )}
-              {quote ? (
+              {car.bookingBlockedByCommission ? (
+                <p className="rounded-lg bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                  Xe sẽ nhận booking lại sau khi PaceCar xác nhận đã nhận hoa
+                  hồng của chuyến thuê trước.
+                </p>
+              ) : quote ? (
                 <Link
                   to={`/booking/${car.id}?quoteId=${quote.quoteId}`}
                   className={`${primaryButton} w-full`}
@@ -1981,7 +2013,11 @@ export function CarDetail() {
               {quote ? money(quote.totalPrice) : money(car.pricePerDay) + "/ngày"}
             </b>
           </div>
-          {quote ? (
+          {car.bookingBlockedByCommission ? (
+            <span className="max-w-40 text-right text-xs font-semibold text-amber-800">
+              Tạm ngưng chờ đối soát hoa hồng
+            </span>
+          ) : quote ? (
             <Link
               to={`/booking/${car.id}?quoteId=${quote.quoteId}`}
               className={primaryButton}

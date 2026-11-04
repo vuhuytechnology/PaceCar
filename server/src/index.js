@@ -815,7 +815,21 @@ const calendarDayDifference = (from, to) => {
   };
   return Math.max(0, Math.round((parse(to) - parse(from)) / 86400000));
 };
+const carHasUnpaidCommission = (data, carId) =>
+  (data.commissions || []).some((commission) => {
+    if (
+      commission.chargeable !== true ||
+      !["Due", "Pending"].includes(commission.status)
+    )
+      return false;
+    return data.bookings.some(
+      (booking) =>
+        booking.id === commission.bookingId &&
+        booking.carId === Number(carId),
+    );
+  });
 const carAvailable = (data, carId, startDate, endDate) =>
+  !carHasUnpaidCommission(data, carId) &&
   !data.bookings.some(
     (booking) =>
       booking.carId === Number(carId) &&
@@ -2022,6 +2036,7 @@ app.get("/api/cars", (req, res) => {
   res.json(
     cars.map((car) => ({
       ...publicCar(car),
+      bookingBlockedByCommission: carHasUnpaidCommission(data, car.id),
       owner: publicOwnerSummary(find(data.users, car.ownerId)),
       ...publicReviewSummary(data, car.id),
     })),
@@ -2104,6 +2119,7 @@ app.get("/api/search/cars", (req, res) => {
       reviewSummary = publicReviewSummary(data, car.id);
     return {
       ...publicCar(car),
+      bookingBlockedByCommission: carHasUnpaidCommission(data, car.id),
       owner: publicOwnerSummary(owner),
       favorite: favoriteIds.has(car.id),
       ...reviewSummary,
@@ -2304,6 +2320,7 @@ app.get(
         )
         .map((car) => ({
           ...publicCar(car),
+          bookingBlockedByCommission: carHasUnpaidCommission(data, car.id),
           owner: publicOwnerSummary(find(data.users, car.ownerId)),
           ...publicReviewSummary(data, car.id),
           favorite: true,
@@ -2443,6 +2460,11 @@ app.post("/api/quotes", quoteLimiter, (req, res) => {
     return res
       .status(400)
       .json({ message: "Ngày nhận xe không thể ở trong quá khứ" });
+  if (carHasUnpaidCommission(data, car.id))
+    return res.status(409).json({
+      message:
+        "Xe đang tạm ngưng nhận booking đến khi PaceCar xác nhận đã nhận hoa hồng cho chuyến trước",
+    });
   const days = rentalDays(quoteInput.startDate, quoteInput.endDate);
   if (days < (car.minRentalDays || 1) || days > (car.maxRentalDays || 30))
     return res.status(422).json({
@@ -2627,6 +2649,7 @@ app.get("/api/cars/:id", (q, s) => {
   const isPrivate = viewer?.role === "admin" || viewer?.id === c.ownerId;
   s.json({
     ...(isPrivate ? c : publicCar(c)),
+    bookingBlockedByCommission: carHasUnpaidCommission(d, c.id),
     ...(!isPrivate ? publicReviewSummary(d, c.id) : {}),
     favorite: Boolean(
       viewer &&
@@ -3124,6 +3147,11 @@ app.post("/api/bookings", bookingLimiter, requireRole(["renter"]), (q, s) => {
     renter = q.authUser;
   if (!car || car.listingStatus !== "Published")
     return s.status(409).json({ message: "Xe hiện không nhận booking" });
+  if (carHasUnpaidCommission(d, car.id))
+    return s.status(409).json({
+      message:
+        "Xe đang tạm ngưng nhận booking đến khi PaceCar xác nhận đã nhận hoa hồng cho chuyến trước",
+    });
   if (car.demoOnly)
     return s
       .status(409)
@@ -4591,7 +4619,11 @@ app.get("/api/cars/:id/availability", (q, s) => {
       startDate: b.startDate,
       endDate: b.endDate,
     }));
-  s.json({ carId: car.id, unavailable });
+  s.json({
+    carId: car.id,
+    unavailable,
+    blockedByCommission: carHasUnpaidCommission(d, car.id),
+  });
 });
 app.get("/api/reviews", (q, s) => {
   const d = read();
