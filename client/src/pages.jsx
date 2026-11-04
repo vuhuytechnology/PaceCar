@@ -1775,7 +1775,6 @@ export function CarDetail() {
                     id="detail-start-date"
                     aria-label="Ngày nhận xe"
                     type="date"
-                    min={today}
                     className={fieldInput}
                     value={startDate}
                     onChange={(e) => {
@@ -1800,7 +1799,6 @@ export function CarDetail() {
                     id="detail-end-date"
                     aria-label="Ngày trả xe"
                     type="date"
-                    min={startDate || tomorrow}
                     className={fieldInput}
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
@@ -3123,10 +3121,15 @@ function BookingRow({ b, actions = false, reload }) {
             Từ chối
           </Button>
         </div>
-      ) : actions && b.status === "Check-out Review" ? (
-        <Button onClick={() => setDecision("Completed")}>
-          Xác nhận hoàn tất
-        </Button>
+      ) : actions && (b.status === "Check-out Review" || b.status === "Ongoing") ? (
+        <div className="flex gap-2">
+          <Button onClick={() => setDecision("Completed")}>
+            {b.status === "Ongoing" ? "Trả xe / Hoàn tất" : "Xác nhận hoàn tất"}
+          </Button>
+          <Button as={Link} to={`/evidence/${b.id}`} variant="outline">
+            Biên bản
+          </Button>
+        </div>
       ) : canViewContract || canViewEvidence || canDispute ? (
         <div className="flex flex-wrap gap-2">
           {canViewContract && (
@@ -3136,7 +3139,12 @@ function BookingRow({ b, actions = false, reload }) {
           )}
           {canViewEvidence && (
             <Button as={Link} to={`/evidence/${b.id}`} variant="outline">
-              Bằng chứng
+              {b.status === "Ongoing" ? "Trả xe / Check-out" : "Bằng chứng"}
+            </Button>
+          )}
+          {b.status === "Ongoing" && (
+            <Button onClick={() => setDecision("Completed")}>
+              Trả xe ngay
             </Button>
           )}
           {canDispute && (

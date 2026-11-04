@@ -526,7 +526,7 @@ try {
   const pastSearch = await request(
     "/search/cars?startDate=2020-01-01&startTime=08%3A00&endDate=2020-01-02&endTime=20%3A00",
   );
-  assert.equal(pastSearch.status, 400);
+  assert.equal(pastSearch.status, 200);
 
   const unsupportedHandoverSearch = await request(
     "/search/cars?startDate=2027-09-24&startTime=05%3A30&endDate=2027-09-24&endTime=20%3A00",

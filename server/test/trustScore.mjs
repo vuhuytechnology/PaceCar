@@ -82,4 +82,19 @@ assert.ok(breakdown.rating);
 assert.ok(breakdown.penalties);
 assert.ok(Array.isArray(breakdown.events));
 
+// 7. Test past dates & flexible checkout
+mockDb.bookings.push({
+  id: 101,
+  renterId: 10,
+  ownerId: 20,
+  startDate: "2020-01-01",
+  endDate: "2020-01-03",
+  status: "Ongoing",
+  paymentStatus: "Paid"
+});
+assert.ok(new Date(mockDb.bookings[1].startDate) < new Date(), "Booking startDate is in the past");
+const scoreBeforePast = renterUser.trustScore;
+onTripCompleted(mockDb, mockDb.bookings[1]);
+assert.ok(renterUser.trustScore > scoreBeforePast, "Completed past booking successfully updated score");
+
 console.log("PaceCar Trust Score Scoring Engine unit and integration tests passed.");
