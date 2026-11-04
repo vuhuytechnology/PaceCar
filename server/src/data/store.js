@@ -46,7 +46,11 @@ const bookingDate = (value, endOfDay = false) => {
   return new Date(value);
 };
 
+// Deals may be created with past dates, so booking statuses are no longer
+// auto-expired or auto-moved to check-out based on the current clock.
+const AUTO_RECONCILE_BOOKINGS = false;
 const reconcileBookingStatuses = (data, now = new Date()) => {
+  if (!AUTO_RECONCILE_BOOKINGS) return false;
   let changed = false;
   const nextId = (items) =>
     Math.max(0, ...items.map((item) => Number(item.id) || 0)) + 1;

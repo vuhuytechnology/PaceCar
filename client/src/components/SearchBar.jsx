@@ -271,18 +271,10 @@ export default function SearchBar({ compact = false }) {
   }, [relevantParams]);
   function submit(e) {
     e.preventDefault();
-    if (form.startDate < isoDate(0)) {
-      toast.error("Ngày nhận xe không thể ở trong quá khứ");
-      return;
-    }
     const start = new Date(`${form.startDate}T${form.startTime}:00`),
       end = new Date(`${form.endDate}T${form.endTime}:00`);
     if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) {
       toast.error("Vui lòng chọn đủ ngày và giờ nhận, trả xe");
-      return;
-    }
-    if (start < new Date()) {
-      toast.error("Thời gian nhận xe không thể ở trong quá khứ");
       return;
     }
     if (end <= start) {

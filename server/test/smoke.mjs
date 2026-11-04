@@ -194,28 +194,12 @@ try {
   assert.equal(commissionPolicy.body.status, "active");
   assert.equal(commissionPolicy.body.chargeable, true);
 
+  // Past-dated deals are allowed: bookings are no longer auto-expired.
   const reconciledBookings = await request("/bookings", { token: admin });
-  assert.equal(
+  assert.equal(reconciledBookings.status, 200);
+  assert.notEqual(
     reconciledBookings.body.find((item) => item.id === 1).status,
     "Expired",
-  );
-  assert.equal(
-    reconciledBookings.body.find((item) => item.id === 6).status,
-    "Check-out Review",
-  );
-  const expiredAccept = await request("/bookings/1/status", {
-    method: "PUT",
-    token: owner,
-    body: JSON.stringify({ status: "Accepted" }),
-  });
-  assert.equal(expiredAccept.status, 409);
-  const reconciliationTimeline = await request("/bookings/1/timeline", {
-    token: owner,
-  });
-  assert.ok(
-    reconciliationTimeline.body.some(
-      (item) => item.action === "STATUS_AUTO_UPDATED",
-    ),
   );
 
   const forbiddenRiskAlerts = await request("/risk-alerts", { token: renter });
