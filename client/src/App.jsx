@@ -1,21 +1,7 @@
-import React, { useEffect } from "react";
+import React, { lazy, Suspense, useEffect } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { ToastProvider, Layout } from "./components/UI";
 import { useAuth } from "./auth/AuthContext";
-import AdminAnalytics from "./pages/AdminAnalytics";
-import AdminDisputes from "./pages/AdminDisputes";
-import {
-  FavoritesPage,
-  MyBookings,
-  Profile,
-  RiskAlerts,
-} from "./pages/Management";
-import {
-  AdminCarApprovals,
-  CarListingWizard,
-  OwnerCarsPage,
-} from "./pages/Listing";
-import AdminPromotions from "./pages/AdminPromotions";
 import {
   Landing,
   HelpCenter,
@@ -34,6 +20,29 @@ import {
   Dispute,
   NotFound,
 } from "./pages";
+
+const AdminAnalytics = lazy(() => import("./pages/AdminAnalytics"));
+const AdminDisputes = lazy(() => import("./pages/AdminDisputes"));
+const AdminPromotions = lazy(() => import("./pages/AdminPromotions"));
+const lazyNamed = (loader, name) =>
+  lazy(() => loader().then((module) => ({ default: module[name] })));
+const FavoritesPage = lazyNamed(
+  () => import("./pages/Management"),
+  "FavoritesPage",
+);
+const MyBookings = lazyNamed(() => import("./pages/Management"), "MyBookings");
+const Profile = lazyNamed(() => import("./pages/Management"), "Profile");
+const RiskAlerts = lazyNamed(() => import("./pages/Management"), "RiskAlerts");
+const AdminCarApprovals = lazyNamed(
+  () => import("./pages/Listing"),
+  "AdminCarApprovals",
+);
+const CarListingWizard = lazyNamed(
+  () => import("./pages/Listing"),
+  "CarListingWizard",
+);
+const OwnerCarsPage = lazyNamed(() => import("./pages/Listing"), "OwnerCarsPage");
+
 function AnalyticsTracker() {
   const location = useLocation();
   const { user } = useAuth();
@@ -95,6 +104,13 @@ export default function App() {
     <ToastProvider>
       <Layout>
         <AnalyticsTracker />
+        <Suspense
+          fallback={
+            <div className="container-app grid min-h-[40vh] place-items-center py-12 text-sm text-slate-500">
+              Đang tải màn hình...
+            </div>
+          }
+        >
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/help" element={<HelpCenter />} />
@@ -244,6 +260,7 @@ export default function App() {
           />
           <Route path="*" element={<NotFound />} />
         </Routes>
+        </Suspense>
       </Layout>
     </ToastProvider>
   );

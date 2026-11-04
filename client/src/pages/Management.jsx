@@ -292,9 +292,14 @@ export function MyBookings() {
               key={b.id}
             >
               <img
-                src={b.car?.imageUrl}
+                src={b.car?.photos?.[0] || b.car?.imageUrl || "/images/home-hero.jpg"}
                 alt={b.car?.name ? `Xe ${b.car.name}` : `Xe của đơn #${b.id}`}
                 loading="lazy"
+                decoding="async"
+                onError={(event) => {
+                  event.currentTarget.onerror = null;
+                  event.currentTarget.src = "/images/home-hero.jpg";
+                }}
                 className="h-20 w-28 rounded-xl object-cover"
               />
               <div>

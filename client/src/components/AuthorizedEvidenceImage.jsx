@@ -51,6 +51,8 @@ export default function AuthorizedEvidenceImage({ asset, alt }) {
       <img
         src={image.url}
         alt={alt}
+        loading="lazy"
+        decoding="async"
         className="h-36 w-full rounded-xl bg-slate-100 object-contain"
       />
     );

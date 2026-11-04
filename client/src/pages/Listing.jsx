@@ -1127,12 +1127,13 @@ export function OwnerCarsPage() {
               <div className="flex gap-4 p-5">
                 <img
                   src={
-                    car.imageUrl ||
                     car.photos?.[0] ||
+                    car.imageUrl ||
                     "https://placehold.co/240x160?text=PaceCar"
                   }
                   alt={car.name ? `Xe ${car.name}` : "Ảnh xe trong bản nháp"}
                   loading="lazy"
+                  decoding="async"
                   className="h-28 w-40 rounded-xl object-cover"
                 />
                 <div className="min-w-0 flex-1">
@@ -1376,6 +1377,7 @@ export function AdminCarApprovals() {
                       : "Xe chờ kiểm duyệt"
                   }
                   loading="lazy"
+                  decoding="async"
                   className="h-36 w-full rounded-xl object-cover"
                 />
                 <div>

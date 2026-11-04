@@ -22,12 +22,13 @@ export default function FeaturedCarCard({
       <div className="relative h-[220px] overflow-hidden bg-[#e9eef6]">
         <img
           src={
-            car.imageUrl ||
             car.photos?.[0] ||
+            car.imageUrl ||
             "https://placehold.co/800x500?text=PaceCar"
           }
           alt={car.name ? `Xe ${car.name}` : "Xe cho thuê trên PaceCar"}
           loading="lazy"
+          decoding="async"
           onError={(event) => {
             event.currentTarget.onerror = null;
             event.currentTarget.src = "/images/home-hero.jpg";

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
 import { seed } from "./seed.js";
 import { RENTAL_POLICY_DEFAULTS, RENTAL_POLICY_VERSION } from "../policy.js";
+import { syncAllUsersTrustScores } from "../trustScore.js";
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const file = process.env.PACECAR_DB_FILE
   ? path.resolve(process.env.PACECAR_DB_FILE)
@@ -409,6 +410,11 @@ function migrateData(data) {
     handoverPoint:
       car.handoverPoint || defaultHandoverPoints[car.location] || car.location,
   }));
+  if (!Array.isArray(data.trustScoreEvents)) {
+    data.trustScoreEvents = seed.trustScoreEvents ? structuredClone(seed.trustScoreEvents) : [];
+    changed = true;
+  }
+  syncAllUsersTrustScores(data);
   data.evidence ||= [];
   for (const evidence of data.evidence) {
     if (

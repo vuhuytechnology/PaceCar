@@ -316,6 +316,7 @@ export const seed = {
       role: "renter",
       phone: "0901234567",
       verified: true,
+      licenseVerified: true,
       trustScore: 88,
       riskLevel: "Low",
     },
@@ -592,5 +593,68 @@ export const seed = {
       createdAt: "2026-04-05",
       resolvedAt: "2026-04-07",
     },
+  ],
+  trustScoreEvents: [
+    // User 1 (Renter: Nguyễn Minh An) - Total delta: +38 (50 + 38 = 88)
+    { id: 1, userId: 1, bookingId: null, eventType: "VERIFY_EMAIL", delta: 3, scoreBefore: 50, scoreAfter: 53, reason: "Xác thực email thành công", createdAt: "2026-06-01T08:00:00Z" },
+    { id: 2, userId: 1, bookingId: null, eventType: "VERIFY_PHONE", delta: 3, scoreBefore: 53, scoreAfter: 56, reason: "Xác thực số điện thoại chính chủ", createdAt: "2026-06-01T08:05:00Z" },
+    { id: 3, userId: 1, bookingId: null, eventType: "VERIFY_IDENTITY", delta: 7, scoreBefore: 56, scoreAfter: 63, reason: "Xác thực CCCD thành công", createdAt: "2026-06-02T10:00:00Z" },
+    { id: 4, userId: 1, bookingId: null, eventType: "VERIFY_LICENSE", delta: 7, scoreBefore: 63, scoreAfter: 70, reason: "Xác thực giấy phép lái xe hợp lệ", createdAt: "2026-06-02T10:30:00Z" },
+    { id: 5, userId: 1, bookingId: null, eventType: "PROFILE_COMPLETED", delta: 5, scoreBefore: 70, scoreAfter: 75, reason: "Hồ sơ người thuê đầy đủ thông tin", createdAt: "2026-06-02T11:00:00Z" },
+    { id: 6, userId: 1, bookingId: 3, eventType: "TRIP_COMPLETED", delta: 5, scoreBefore: 75, scoreAfter: 80, reason: "Hoàn thành chuyến đi đầu tiên #PC3", createdAt: "2026-06-22T17:00:00Z" },
+    { id: 7, userId: 1, bookingId: 3, eventType: "DEPOSIT_ON_TIME", delta: 1, scoreBefore: 80, scoreAfter: 81, reason: "Thanh toán cọc đúng hạn cho booking #PC3", createdAt: "2026-06-20T08:00:00Z" },
+    { id: 8, userId: 1, bookingId: 3, eventType: "EVIDENCE_COMPLETE", delta: 1, scoreBefore: 81, scoreAfter: 82, reason: "Hoàn tất biên bản check-in/out đủ ảnh và ODO cho #PC3", createdAt: "2026-06-22T17:05:00Z" },
+    { id: 9, userId: 1, bookingId: 3, eventType: "ON_TIME_RETURN", delta: 1, scoreBefore: 82, scoreAfter: 83, reason: "Trả xe đúng giờ quy định cho #PC3", createdAt: "2026-06-22T17:10:00Z" },
+    { id: 10, userId: 1, bookingId: 3, eventType: "HIGH_RATING_BONUS", delta: 5, scoreBefore: 83, scoreAfter: 88, reason: "Chuyến đi đạt đánh giá 5 sao từ người dùng", createdAt: "2026-06-23T10:00:00Z" },
+
+    // User 2 (Renter: Trần Thu Hà) - Total delta: +26 (50 + 26 = 76)
+    { id: 11, userId: 2, bookingId: null, eventType: "VERIFY_EMAIL", delta: 3, scoreBefore: 50, scoreAfter: 53, reason: "Xác thực email thành công", createdAt: "2026-03-20T09:00:00Z" },
+    { id: 12, userId: 2, bookingId: null, eventType: "VERIFY_PHONE", delta: 3, scoreBefore: 53, scoreAfter: 56, reason: "Xác thực số điện thoại chính chủ", createdAt: "2026-03-20T09:05:00Z" },
+    { id: 13, userId: 2, bookingId: null, eventType: "VERIFY_IDENTITY", delta: 7, scoreBefore: 56, scoreAfter: 63, reason: "Xác thực CCCD thành công", createdAt: "2026-03-21T14:00:00Z" },
+    { id: 14, userId: 2, bookingId: null, eventType: "PROFILE_COMPLETED", delta: 5, scoreBefore: 63, scoreAfter: 68, reason: "Hồ sơ người thuê cơ bản", createdAt: "2026-03-21T14:30:00Z" },
+    { id: 15, userId: 2, bookingId: 7, eventType: "TRIP_COMPLETED", delta: 5, scoreBefore: 68, scoreAfter: 73, reason: "Hoàn thành chuyến đi #PC7", createdAt: "2026-04-04T18:00:00Z" },
+    { id: 16, userId: 2, bookingId: 7, eventType: "DEPOSIT_ON_TIME", delta: 1, scoreBefore: 73, scoreAfter: 74, reason: "Thanh toán cọc đúng hạn cho booking #PC7", createdAt: "2026-03-28T09:00:00Z" },
+    { id: 17, userId: 2, bookingId: 7, eventType: "EVIDENCE_COMPLETE", delta: 1, scoreBefore: 74, scoreAfter: 75, reason: "Hoàn tất biên bản bàn giao #PC7", createdAt: "2026-04-04T18:05:00Z" },
+    { id: 18, userId: 2, bookingId: 7, eventType: "ON_TIME_RETURN", delta: 1, scoreBefore: 75, scoreAfter: 76, reason: "Trả xe đúng hạn cho #PC7", createdAt: "2026-04-04T18:10:00Z" },
+
+    // User 3 (Renter: Lê Hoàng Nam) - Total delta: -2 (50 - 2 = 48)
+    { id: 19, userId: 3, bookingId: null, eventType: "VERIFY_PHONE", delta: 3, scoreBefore: 50, scoreAfter: 53, reason: "Xác thực số điện thoại", createdAt: "2026-07-01T10:00:00Z" },
+    { id: 20, userId: 3, bookingId: 4, eventType: "DISPUTE_FAULT", delta: -5, scoreBefore: 53, scoreAfter: 48, reason: "Tranh chấp phát sinh vết xước mới chưa giải quyết", createdAt: "2026-07-10T11:00:00Z" },
+
+    // User 4 (Owner: Phạm Đức Long) - Total delta: +44 (50 + 44 = 94)
+    { id: 21, userId: 4, bookingId: null, eventType: "VERIFY_EMAIL", delta: 3, scoreBefore: 50, scoreAfter: 53, reason: "Xác thực email", createdAt: "2026-01-10T08:00:00Z" },
+    { id: 22, userId: 4, bookingId: null, eventType: "VERIFY_PHONE", delta: 3, scoreBefore: 53, scoreAfter: 56, reason: "Xác thực số điện thoại", createdAt: "2026-01-10T08:05:00Z" },
+    { id: 23, userId: 4, bookingId: null, eventType: "VERIFY_IDENTITY", delta: 7, scoreBefore: 56, scoreAfter: 63, reason: "Xác thực CCCD", createdAt: "2026-01-11T09:00:00Z" },
+    { id: 24, userId: 4, bookingId: null, eventType: "VERIFY_BANK", delta: 5, scoreBefore: 63, scoreAfter: 68, reason: "Xác thực tài khoản nhận tiền", createdAt: "2026-01-11T09:30:00Z" },
+    { id: 25, userId: 4, bookingId: null, eventType: "CAR_APPROVED", delta: 5, scoreBefore: 68, scoreAfter: 73, reason: "Duyệt xuất bản xe trên nền tảng", createdAt: "2026-01-12T14:00:00Z" },
+    { id: 26, userId: 4, bookingId: null, eventType: "PROFILE_COMPLETED", delta: 2, scoreBefore: 73, scoreAfter: 75, reason: "Hồ sơ chủ xe đầy đủ", createdAt: "2026-01-12T14:15:00Z" },
+    { id: 27, userId: 4, bookingId: null, eventType: "FLEET_EXPERIENCE", delta: 12, scoreBefore: 75, scoreAfter: 87, reason: "Kinh nghiệm vận hành đội xe lớn uy tín", createdAt: "2026-06-01T00:00:00Z" },
+    { id: 28, userId: 4, bookingId: null, eventType: "BAYESIAN_RATING_UPDATE", delta: 7, scoreBefore: 87, scoreAfter: 94, reason: "Đánh giá chất lượng dịch vụ đội xe 4.8 sao", createdAt: "2026-07-01T00:00:00Z" },
+
+    // User 5 (Owner: Vũ Thanh Tùng) - Total delta: +36 (50 + 36 = 86)
+    { id: 29, userId: 5, bookingId: null, eventType: "VERIFY_EMAIL", delta: 3, scoreBefore: 50, scoreAfter: 53, reason: "Xác thực email", createdAt: "2026-02-15T08:00:00Z" },
+    { id: 30, userId: 5, bookingId: null, eventType: "VERIFY_PHONE", delta: 3, scoreBefore: 53, scoreAfter: 56, reason: "Xác thực số điện thoại", createdAt: "2026-02-15T08:05:00Z" },
+    { id: 31, userId: 5, bookingId: null, eventType: "VERIFY_IDENTITY", delta: 7, scoreBefore: 56, scoreAfter: 63, reason: "Xác thực CCCD", createdAt: "2026-02-16T10:00:00Z" },
+    { id: 32, userId: 5, bookingId: null, eventType: "VERIFY_BANK", delta: 5, scoreBefore: 63, scoreAfter: 68, reason: "Xác thực tài khoản ngân hàng", createdAt: "2026-02-16T10:30:00Z" },
+    { id: 33, userId: 5, bookingId: null, eventType: "CAR_APPROVED", delta: 5, scoreBefore: 68, scoreAfter: 73, reason: "Xe đã được phê duyệt", createdAt: "2026-02-17T09:00:00Z" },
+    { id: 34, userId: 5, bookingId: null, eventType: "PROFILE_COMPLETED", delta: 2, scoreBefore: 73, scoreAfter: 75, reason: "Hồ sơ chủ xe", createdAt: "2026-02-17T09:15:00Z" },
+    { id: 35, userId: 5, bookingId: 3, eventType: "ORDER_COMPLETED", delta: 3, scoreBefore: 75, scoreAfter: 78, reason: "Hoàn tất phục vụ đơn thuê xe #PC3", createdAt: "2026-06-22T17:00:00Z" },
+    { id: 36, userId: 5, bookingId: 3, eventType: "HANDOVER_COMPLETE", delta: 1, scoreBefore: 78, scoreAfter: 79, reason: "Bàn giao xe đúng quy trình kiểm định #PC3", createdAt: "2026-06-22T17:05:00Z" },
+    { id: 37, userId: 5, bookingId: 3, eventType: "BAYESIAN_RATING_UPDATE", delta: 7, scoreBefore: 79, scoreAfter: 86, reason: "Đánh giá chất lượng Bayesian đạt mức Tốt (+7)", createdAt: "2026-06-23T10:00:00Z" },
+
+    // User 6 (Owner: Đỗ Mai Linh) - Total delta: +41 (50 + 41 = 91)
+    { id: 38, userId: 6, bookingId: null, eventType: "VERIFY_EMAIL", delta: 3, scoreBefore: 50, scoreAfter: 53, reason: "Xác thực email", createdAt: "2026-03-01T08:00:00Z" },
+    { id: 39, userId: 6, bookingId: null, eventType: "VERIFY_PHONE", delta: 3, scoreBefore: 53, scoreAfter: 56, reason: "Xác thực số điện thoại", createdAt: "2026-03-01T08:05:00Z" },
+    { id: 40, userId: 6, bookingId: null, eventType: "VERIFY_IDENTITY", delta: 7, scoreBefore: 56, scoreAfter: 63, reason: "Xác thực CCCD", createdAt: "2026-03-02T10:00:00Z" },
+    { id: 41, userId: 6, bookingId: null, eventType: "VERIFY_BANK", delta: 5, scoreBefore: 63, scoreAfter: 68, reason: "Xác thực tài khoản ngân hàng", createdAt: "2026-03-02T10:30:00Z" },
+    { id: 42, userId: 6, bookingId: null, eventType: "CAR_APPROVED", delta: 5, scoreBefore: 68, scoreAfter: 73, reason: "Xe đã được phê duyệt", createdAt: "2026-03-03T09:00:00Z" },
+    { id: 43, userId: 6, bookingId: null, eventType: "PROFILE_COMPLETED", delta: 2, scoreBefore: 73, scoreAfter: 75, reason: "Hồ sơ chủ xe", createdAt: "2026-03-03T09:15:00Z" },
+    { id: 44, userId: 6, bookingId: 7, eventType: "ORDER_COMPLETED", delta: 3, scoreBefore: 75, scoreAfter: 78, reason: "Hoàn tất phục vụ đơn thuê xe #PC7", createdAt: "2026-04-04T18:00:00Z" },
+    { id: 45, userId: 6, bookingId: 7, eventType: "HANDOVER_COMPLETE", delta: 1, scoreBefore: 78, scoreAfter: 79, reason: "Bàn giao xe đúng quy trình kiểm định #PC7", createdAt: "2026-04-04T18:05:00Z" },
+    { id: 46, userId: 6, bookingId: null, eventType: "FLEET_EXPERIENCE", delta: 5, scoreBefore: 79, scoreAfter: 84, reason: "Kinh nghiệm phục vụ khách hàng trên nền tảng", createdAt: "2026-05-01T00:00:00Z" },
+    { id: 47, userId: 6, bookingId: 7, eventType: "BAYESIAN_RATING_UPDATE", delta: 7, scoreBefore: 84, scoreAfter: 91, reason: "Đánh giá chất lượng Bayesian đạt 4.0 sao (+7)", createdAt: "2026-04-05T10:00:00Z" },
+
+    // User 7 (Admin) - Total delta: +50 (50 + 50 = 100)
+    { id: 48, userId: 7, bookingId: null, eventType: "ADMIN_ROLE", delta: 50, scoreBefore: 50, scoreAfter: 100, reason: "Quản trị viên hệ thống PaceCar", createdAt: "2026-01-01T00:00:00Z" },
   ],
 };

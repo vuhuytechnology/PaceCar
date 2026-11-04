@@ -26,6 +26,16 @@ import {
 import { hasPendingPriceRevision, registerDealRoutes } from "./dealRoutes.js";
 import { sepayQrUrl } from "./sepay.js";
 import { emailVerificationEnabled, sendMail } from "./mailer.js";
+import {
+  EVENT_TYPES,
+  getUserTrustBreakdown,
+  onBookingCancelled,
+  onDisputeResolved,
+  onReviewCreated,
+  onTripCompleted,
+  recordTrustScoreEvent,
+  syncUserTrustScore,
+} from "./trustScore.js";
 const app = express();
 app.set("trust proxy", process.env.TRUST_PROXY || "loopback");
 app.use(
@@ -95,6 +105,7 @@ app.get("/api/uploads/files/:filename", async (req, res, next) => {
     const storedPhoto = await readCarPhotoBlob(filename);
     if (storedPhoto) {
       res.set("Cache-Control", "public, max-age=604800, immutable");
+      res.set("X-Content-Type-Options", "nosniff");
       return res.type(storedPhoto.mimeType).send(storedPhoto.content);
     }
     const filePath = path.join(uploadDir, filename);
@@ -103,6 +114,7 @@ app.get("/api/uploads/files/:filename", async (req, res, next) => {
         message: "Ảnh xe không còn trên máy chủ. Chủ xe cần tải lại ảnh.",
       });
     res.set("Cache-Control", "public, max-age=604800, immutable");
+    res.set("X-Content-Type-Options", "nosniff");
     res.sendFile(filePath);
   } catch (error) {
     next(error);
@@ -1758,6 +1770,7 @@ app.get(
         .status(403)
         .json({ message: "Bạn không có quyền xem bằng chứng này" });
     res.set("Cache-Control", "private, no-store, max-age=0");
+    res.set("X-Content-Type-Options", "nosniff");
     const storedAsset = await readEvidenceBlob(asset.id);
     if (storedAsset)
       return res
@@ -4608,6 +4621,23 @@ app.put("/api/users/:id", requireRole(["renter", "owner", "admin"]), (q, s) => {
   write(d);
   s.json(publicUser(user));
 });
+app.get(
+  "/api/users/:id/trust-breakdown",
+  requireRole(["renter", "owner", "admin"]),
+  (q, s) => {
+    const requestedUserId = +q.params.id;
+    if (q.authUser.role !== "admin" && q.authUser.id !== requestedUserId)
+      return s
+        .status(403)
+        .json({ message: "Bạn không có quyền xem thông tin này" });
+    const d = read();
+    const user = find(d.users, requestedUserId);
+    if (!user)
+      return s.status(404).json({ message: "Không tìm thấy người dùng" });
+    const breakdown = getUserTrustBreakdown(d, user);
+    s.json(breakdown);
+  },
+);
 app.get("/api/cars/:id/availability", (q, s) => {
   const d = read(),
     car = find(d.cars, q.params.id);

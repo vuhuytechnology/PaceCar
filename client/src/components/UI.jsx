@@ -145,12 +145,13 @@ export function CarCard({ car, onRemoveFavorite, removing = false }) {
       <div className="relative h-52 overflow-hidden">
         <img
           src={
-            car.imageUrl ||
             car.photos?.[0] ||
+            car.imageUrl ||
             "https://placehold.co/800x500?text=PaceCar"
           }
           alt={car.name ? `Xe ${car.name}` : "Xe cho thuê trên PaceCar"}
           loading="lazy"
+          decoding="async"
           onError={(event) => {
             event.currentTarget.onerror = null;
             event.currentTarget.src = "/images/home-hero.jpg";
@@ -362,54 +363,187 @@ export function Modal({ open, title, children, onClose, actions }) {
     </div>
   );
 }
-export function TrustBreakdown({ score = 50, verification = {} }) {
-  const items = [
-    ["Xác thực danh tính", 20, verification.identityVerified],
-    ["Số điện thoại", 10, verification.phoneVerified],
-    ["Giấy phép lái xe", 10, verification.licenseVerified],
-    ["Không có tranh chấp", 10, verification.noDisputes],
-    ["Lịch sử hoàn thành", 10, verification.completedTrips],
-  ];
+export function TrustBreakdown({
+  score = 50,
+  verification = {},
+  breakdown = null,
+}) {
+  const displayScore = breakdown?.score ?? score;
+  const isHealthy = displayScore >= 75;
+  const isWarning = displayScore < 50;
+  const gaugeColor = isWarning ? "#ef4444" : isHealthy ? "#10b981" : "#f59e0b";
+
   return (
     <div className="card p-5">
       <div className="flex items-center gap-5">
         <div
           className="grid h-24 w-24 shrink-0 place-items-center rounded-full"
           style={{
-            background: `conic-gradient(#10b981 ${score * 3.6}deg,#e2e8f0 0)`,
+            background: `conic-gradient(${gaugeColor} ${displayScore * 3.6}deg,#e2e8f0 0)`,
           }}
         >
           <div className="grid h-20 w-20 place-items-center rounded-full bg-white">
-            <span className="text-2xl font-extrabold">{score}</span>
+            <span className="text-2xl font-extrabold">{displayScore}</span>
           </div>
         </div>
         <div>
-          <h3 className="font-bold">Trust Score của bạn</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="font-bold">Trust Score của bạn</h3>
+            {breakdown?.riskLevel && (
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                  breakdown.riskLevel === "Low"
+                    ? "bg-emerald-50 text-emerald-700"
+                    : breakdown.riskLevel === "Medium"
+                      ? "bg-amber-50 text-amber-700"
+                      : "bg-red-50 text-red-700"
+                }`}
+              >
+                Rủi ro: {breakdown.riskLevel}
+              </span>
+            )}
+          </div>
           <p className="mt-1 text-xs leading-5 text-slate-500">
-            Điểm theo quy tắc minh bạch của MVP, không sử dụng AI.
+            Điểm tính tự động từ hành vi, xác minh danh tính và phán quyết tranh
+            chấp theo quy tắc minh bạch 100%.
           </p>
         </div>
       </div>
-      <div className="mt-5 space-y-2">
-        {items.map(([x, p, ok]) => (
-          <div className="flex items-center justify-between text-sm" key={x}>
-            <span
-              className={
-                ok === true
-                  ? ""
-                  : ok === false
-                    ? "text-red-500"
-                    : "text-slate-400"
-              }
-            >
-              {ok === true ? "✓" : ok === false ? "×" : "○"} {x}
-            </span>
-            <b className={ok === true ? "text-emerald-600" : "text-slate-400"}>
-              {ok === true ? `+${p}` : ok === false ? "+0" : "Chưa có dữ liệu"}
-            </b>
+
+      {breakdown ? (
+        <div className="mt-5 space-y-4 divide-y divide-slate-100">
+          <div className="pt-2">
+            <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-500">
+              <span>1. Xác thực hồ sơ</span>
+              <span className="text-emerald-600">
+                +{breakdown.verification?.total ?? 0}/25
+              </span>
+            </div>
+            <div className="mt-2 space-y-1.5">
+              {breakdown.verification?.items?.map((item) => (
+                <div
+                  className="flex items-center justify-between text-sm"
+                  key={item.name}
+                >
+                  <span
+                    className={
+                      item.achieved ? "text-slate-700" : "text-slate-400"
+                    }
+                  >
+                    {item.achieved ? "✓" : "○"} {item.name}
+                  </span>
+                  <b
+                    className={
+                      item.achieved ? "text-emerald-600" : "text-slate-400"
+                    }
+                  >
+                    {item.achieved ? `+${item.points}` : "+0"}
+                  </b>
+                </div>
+              ))}
+            </div>
           </div>
-        ))}
-      </div>
+
+          <div className="pt-3">
+            <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-500">
+              <span>2. Lịch sử giao dịch</span>
+              <span className="text-emerald-600">
+                +{breakdown.history?.total ?? 0}/25
+              </span>
+            </div>
+            <div className="mt-2 space-y-1.5">
+              {breakdown.history?.items?.length > 0 ? (
+                breakdown.history.items.map((item) => (
+                  <div
+                    className="flex items-center justify-between text-sm"
+                    key={item.name}
+                  >
+                    <span className="text-slate-700">✓ {item.name}</span>
+                    <b className="text-emerald-600">+{item.points}</b>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs italic text-slate-400">
+                  Chưa phát sinh chuyến đi hoàn thành
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="pt-3">
+            <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-500">
+              <span>3. Chất lượng &amp; Đánh giá</span>
+              <span
+                className={
+                  (breakdown.rating?.points ?? 0) >= 0
+                    ? "text-emerald-600"
+                    : "text-red-500"
+                }
+              >
+                {(breakdown.rating?.points ?? 0) >= 0
+                  ? `+${breakdown.rating?.points ?? 0}`
+                  : breakdown.rating?.points}
+              </span>
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Điểm Bayesian hiệu chỉnh theo đánh giá từ người dùng
+            </div>
+          </div>
+
+          {breakdown.penalties?.total > 0 && (
+            <div className="pt-3">
+              <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-red-500">
+                <span>4. Điểm phạt vi phạm</span>
+                <span>-{breakdown.penalties.total}</span>
+              </div>
+              <div className="mt-2 space-y-1.5">
+                {breakdown.penalties.items.map((item, idx) => (
+                  <div
+                    className="flex items-center justify-between text-sm text-red-600"
+                    key={idx}
+                  >
+                    <span>× {item.name}</span>
+                    <b>-{item.points}</b>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="mt-5 space-y-2">
+          {[
+            ["Xác thực danh tính", 20, verification.identityVerified],
+            ["Số điện thoại", 10, verification.phoneVerified],
+            ["Giấy phép lái xe", 10, verification.licenseVerified],
+            ["Không có tranh chấp", 10, verification.noDisputes],
+            ["Lịch sử hoàn thành", 10, verification.completedTrips],
+          ].map(([x, p, ok]) => (
+            <div className="flex items-center justify-between text-sm" key={x}>
+              <span
+                className={
+                  ok === true
+                    ? ""
+                    : ok === false
+                      ? "text-red-500"
+                      : "text-slate-400"
+                }
+              >
+                {ok === true ? "✓" : ok === false ? "×" : "○"} {x}
+              </span>
+              <b
+                className={ok === true ? "text-emerald-600" : "text-slate-400"}
+              >
+                {ok === true
+                  ? `+${p}`
+                  : ok === false
+                    ? "+0"
+                    : "Chưa có dữ liệu"}
+              </b>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

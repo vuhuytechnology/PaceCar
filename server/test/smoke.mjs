@@ -1261,6 +1261,8 @@ try {
   );
   assert.equal(evidenceImage.status, 200);
   assert.match(evidenceImage.headers.get("content-type"), /^image\/png/);
+  assert.equal(evidenceImage.headers.get("x-content-type-options"), "nosniff");
+  assert.match(evidenceImage.headers.get("cache-control") || "", /no-store/);
   assert.deepEqual(
     Buffer.from(await evidenceImage.arrayBuffer()),
     Buffer.from("89504e470d0a1a0a", "hex"),
@@ -1400,6 +1402,8 @@ try {
   );
   assert.equal(carPhoto.status, 200);
   assert.match(carPhoto.headers.get("content-type"), /^image\/png/);
+  assert.equal(carPhoto.headers.get("x-content-type-options"), "nosniff");
+  assert.match(carPhoto.headers.get("cache-control") || "", /immutable/);
   assert.deepEqual(
     Buffer.from(await carPhoto.arrayBuffer()),
     Buffer.from("89504e470d0a1a0a", "hex"),

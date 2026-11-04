@@ -38,6 +38,7 @@ import {
   UserPlus,
   Wallet,
 } from "lucide-react";
+import AuthorizedEvidenceImage from "./components/AuthorizedEvidenceImage";
 import LogoMark from "./components/LogoMark";
 import FeaturedCarCard from "./components/FeaturedCarCard";
 import { api, date, dateTime, money } from "./services/api";
@@ -212,10 +213,10 @@ export function Landing() {
     ],
   ];
   const destinations = [
-    ["Hà Đông", "/images/home-dest-hadong.png"],
-    ["Cầu Giấy", "/images/home-dest-caugiay.png"],
-    ["Mỹ Đình", "/images/home-dest-mydinh.png"],
-    ["Hòa Lạc", "/images/home-dest-hoalac.png"],
+    ["Hà Đông", "/images/home-dest-hadong.jpg"],
+    ["Cầu Giấy", "/images/home-dest-caugiay.jpg"],
+    ["Mỹ Đình", "/images/home-dest-mydinh.jpg"],
+    ["Hòa Lạc", "/images/home-dest-hoalac.jpg"],
   ];
   const trust = [
     [ShieldCheck, "Giá minh bạch", "Mọi chi phí được hiển thị trước khi đặt xe.", "border-b-[0.8px] sm:border-r-[0.8px]"],
@@ -1121,8 +1122,9 @@ function LegacyCarDetail() {
     <div className="container-app py-10">
       <div className="grid gap-4 md:grid-cols-4">
         <img
-          src={c.imageUrl}
+          src={c.photos?.[0] || c.imageUrl || "/images/home-hero.jpg"}
           alt={`${c.name} - ảnh xe`}
+          decoding="async"
           onError={(event) => {
             event.currentTarget.onerror = null;
             event.currentTarget.src = "/images/home-hero.jpg";
@@ -1131,8 +1133,10 @@ function LegacyCarDetail() {
         />
         <div className="grid grid-rows-2 gap-4">
           <img
-            src={c.imageUrl}
+            src={c.photos?.[1] || c.photos?.[0] || c.imageUrl || "/images/home-hero.jpg"}
             alt={`${c.name} - ảnh xe`}
+            loading="lazy"
+            decoding="async"
             onError={(event) => {
               event.currentTarget.onerror = null;
               event.currentTarget.src = "/images/home-hero.jpg";
@@ -2384,7 +2388,7 @@ export function Register() {
           <div
             aria-hidden="true"
             className="absolute inset-y-0 left-[-15.7px] w-[332px] bg-cover bg-center"
-            style={{ backgroundImage: "url(/images/register-side.png)" }}
+            style={{ backgroundImage: "url(/images/register-side.jpg)" }}
           />
           <div
             aria-hidden="true"
@@ -2997,8 +3001,9 @@ function LegacyBooking() {
         <aside>
           <div className="card sticky top-24 p-6">
             <img
-              src={c.imageUrl || c.photos?.[0] || "/images/home-hero.jpg"}
+              src={c.photos?.[0] || c.imageUrl || "/images/home-hero.jpg"}
               alt={c.name}
+              decoding="async"
               onError={(event) => {
                 event.currentTarget.onerror = null;
                 event.currentTarget.src = "/images/home-hero.jpg";
@@ -3084,9 +3089,14 @@ function BookingRow({ b, actions = false, reload }) {
   return (
     <div className="flex flex-col gap-4 border-b border-slate-100 py-5 last:border-0 md:flex-row md:items-center">
       <img
-        src={b.car?.imageUrl}
+        src={b.car?.photos?.[0] || b.car?.imageUrl || "/images/home-hero.jpg"}
         alt={b.car?.name || "Xe trong đơn thuê"}
         loading="lazy"
+        decoding="async"
+        onError={(event) => {
+          event.currentTarget.onerror = null;
+          event.currentTarget.src = "/images/home-hero.jpg";
+        }}
         className="h-20 w-28 rounded-xl object-cover"
       />
       <div className="flex-1">
@@ -4169,72 +4179,6 @@ export function Evidence() {
   );
 }
 
-function AuthorizedEvidenceImage({ asset, alt }) {
-  const id = typeof asset === "object" ? asset.id : asset,
-    source =
-      typeof asset === "object" ? asset.url : `/api/evidence-assets/${id}`;
-  const [url, setUrl] = useState("");
-  const [error, setError] = useState("");
-  const [retry, setRetry] = useState(0);
-  useEffect(() => {
-    let active = true,
-      objectUrl = "";
-    setUrl("");
-    setError("");
-    const token = localStorage.getItem("pacecar-token");
-    fetch(source, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          const payload = await response.json().catch(() => ({}));
-          throw new Error(
-            payload.message || `Không tải được ảnh (HTTP ${response.status})`,
-          );
-        }
-        return response.blob();
-      })
-      .then((blob) => {
-        if (!active) return;
-        objectUrl = URL.createObjectURL(blob);
-        setUrl(objectUrl);
-      })
-      .catch((loadError) => {
-        if (active) setError(loadError.message || "Không tải được ảnh");
-      });
-    return () => {
-      active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [source, retry]);
-  return url ? (
-    <img
-      src={url}
-      alt={alt}
-      className="h-36 w-full rounded-xl bg-slate-100 object-contain"
-    />
-  ) : error ? (
-    <div
-      role="alert"
-      className="grid h-36 place-items-center rounded-xl bg-red-50 p-3 text-center text-xs text-red-700"
-    >
-      <div>
-        <p>{error}</p>
-        <button
-          type="button"
-          onClick={() => setRetry((value) => value + 1)}
-          className="mt-2 font-semibold underline"
-        >
-          Thử tải lại
-        </button>
-      </div>
-    </div>
-  ) : (
-    <div className="grid h-36 place-items-center rounded-xl bg-slate-100 text-xs text-slate-400">
-      Đang tải ảnh...
-    </div>
-  );
-}
 export function Dispute() {
   const { bookingId } = useParams(),
     toast = useToast();
@@ -4898,7 +4842,14 @@ function LegacyBookingV2() {
         <aside>
           <div className="card sticky top-24 p-5">
             <img
-              src={car.imageUrl}
+              src={car.photos?.[0] || car.imageUrl || "/images/home-hero.jpg"}
+              alt={car.name ? `Xe ${car.name}` : "Xe cho thuê trên PaceCar"}
+              loading="lazy"
+              decoding="async"
+              onError={(event) => {
+                event.currentTarget.onerror = null;
+                event.currentTarget.src = "/images/home-hero.jpg";
+              }}
               className="h-36 w-full rounded-xl object-cover"
             />
             <h3 className="mt-4 font-bold">{car.name}</h3>
@@ -4931,8 +4882,9 @@ export function RenterDashboard() {
           verification={{
             identityVerified: user?.verified,
             phoneVerified: Boolean(user?.phone),
-            licenseVerified: user?.licenseVerified,
+            licenseVerified: user?.licenseVerified ?? user?.verified,
           }}
+          breakdown={user?.trustBreakdown}
         />
       </div>
     </DashboardShell>
@@ -5053,8 +5005,14 @@ function BookingQuoteFlow({ carId, quoteId }) {
           <section className="card p-6">
             <div className="flex gap-4">
               <img
-                src={car.imageUrl || car.photos?.[0]}
+                src={car.photos?.[0] || car.imageUrl || "/images/home-hero.jpg"}
                 alt={car.name}
+                loading="lazy"
+                decoding="async"
+                onError={(event) => {
+                  event.currentTarget.onerror = null;
+                  event.currentTarget.src = "/images/home-hero.jpg";
+                }}
                 className="h-28 w-40 rounded-xl object-cover"
               />
               <div>
