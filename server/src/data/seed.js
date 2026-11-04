@@ -556,6 +556,9 @@ export const seed = {
       "Hai bên cam kết tuân thủ quy định giao nhận, bảo quản xe và bồi thường theo bằng chứng.",
     renterSigned: i > 0,
     ownerSigned: i > 0,
+    renterSignedAt: i > 0 ? "2026-07-10" : undefined,
+    ownerSignedAt: i > 0 ? "2026-07-10" : undefined,
+    signedAt: i > 0 ? "2026-07-10" : undefined,
     createdAt: "2026-07-10",
   })),
   evidence: [1, 3, 4].map((bookingId, i) => ({

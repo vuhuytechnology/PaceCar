@@ -6,7 +6,7 @@
     "start": "node src/index.js",
     "db:import-json": "node src/data/import-json.js",
     "db:export-json": "node src/data/export-json.js",
-    "test": "node test/trustScore.mjs && node test/smoke.mjs && node test/deals.mjs"
+    "test": "node test/trustScore.mjs && node test/smoke.mjs && node test/deals.mjs && node test/checkoutAndContract.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",

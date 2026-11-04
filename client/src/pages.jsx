@@ -3825,10 +3825,17 @@ export function Evidence() {
   if (evidenceFetch.loading || bookingFetch.loading || !booking)
     return <Load />;
   const editable = {
-      checkin: ["Contract Signed", "Ready for Check-in"].includes(
-        booking.status,
-      ),
-      checkout: ["Ongoing", "Check-out Review"].includes(booking.status),
+      checkin: [
+        "Contract Signed",
+        "Ready for Check-in",
+        "Ongoing",
+      ].includes(booking.status),
+      checkout: [
+        "Contract Signed",
+        "Ready for Check-in",
+        "Ongoing",
+        "Check-out Review",
+      ].includes(booking.status),
     },
     isCurrentPolicy =
       booking.pricingSnapshot?.policyVersion === RENTAL_POLICY.version,

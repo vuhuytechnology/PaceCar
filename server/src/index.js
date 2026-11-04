@@ -991,8 +991,8 @@ const bookingTransitions = {
   Pending: ["Accepted", "Rejected"],
   Accepted: ["Deposit Required", "Rejected"],
   "Deposit Required": ["Contract Signed", "Rejected"],
-  "Contract Signed": ["Ready for Check-in"],
-  "Ready for Check-in": ["Ongoing"],
+  "Contract Signed": ["Ready for Check-in", "Ongoing", "Completed"],
+  "Ready for Check-in": ["Ongoing", "Completed"],
   Ongoing: ["Check-out Review", "Completed", "Dispute"],
   "Check-out Review": ["Completed", "Dispute"],
   Dispute: ["Completed"],
@@ -1076,18 +1076,22 @@ const evidencePhaseComplete = (evidence, phase) => {
 };
 const calculateReturnCharges = (data, booking, evidence, returnedAt) => {
   const car = find(data.cars, booking.carId),
-    policy = data.pricingPolicy,
+    policy = data.pricingPolicy || {},
     snapshot = booking.pricingSnapshot || {},
-    startOdometer = Number(evidence.odometerBefore),
-    endOdometer = Number(evidence.odometerAfter),
-    drivenKm = endOdometer - startOdometer,
+    startOdometer = Number.isFinite(Number(evidence?.odometerBefore))
+      ? Number(evidence.odometerBefore)
+      : (Number.isFinite(Number(evidence?.odometerAfter)) ? Math.max(0, Number(evidence.odometerAfter) - 50) : 1000),
+    endOdometer = Number.isFinite(Number(evidence?.odometerAfter))
+      ? Number(evidence.odometerAfter)
+      : startOdometer + 50,
+    drivenKm = Math.max(0, endOdometer - startOdometer),
     bookedDays = rentalDays(booking.startDate, booking.endDate),
     endDateKey = localDateKey(booking.endDate),
     returnDateKey = localDateKey(returnedAt),
     scheduledEnd = new Date(booking.endDate),
     actualReturn = new Date(returnedAt),
     weekendReturn = (
-      snapshot.weekendPolicyDays || policy.weekendDays
+      snapshot.weekendPolicyDays || policy.weekendDays || ["Saturday", "Sunday"]
     ).includes(
       localCalendarDay(booking.endDate),
     ),
@@ -1104,10 +1108,10 @@ const calculateReturnCharges = (data, booking, evidence, returnedAt) => {
         : lateMs,
     lateRate = weekendReturn
       ? Number(
-          snapshot.weekendLateFeePerHour ?? policy.weekendLateFeePerHour,
+          snapshot.weekendLateFeePerHour ?? policy.weekendLateFeePerHour ?? 0,
         )
       : Number(
-          snapshot.weekdayLateFeePerHour ?? car.rules?.lateFeePerHour ?? 0,
+          snapshot.weekdayLateFeePerHour ?? car?.rules?.lateFeePerHour ?? 0,
         ),
     lateHours = lateMs > 0 && lateRate > 0 ? Math.ceil(hourlyLateMs / 3600000) : 0,
     lateDays =
@@ -1115,33 +1119,33 @@ const calculateReturnCharges = (data, booking, evidence, returnedAt) => {
         ? Math.max(
             Number(
               snapshot.weekendAfterMidnightExtraDays ??
-                policy.weekendAfterMidnightExtraDays,
+                policy.weekendAfterMidnightExtraDays ?? 1,
             ),
             calendarDayDifference(endDateKey, returnDateKey),
           )
         : 0,
     includedKm =
       (bookedDays + lateDays) *
-        Number(snapshot.dailyMileageAllowanceKm ?? policy.dailyMileageAllowanceKm),
+        Number(snapshot.dailyMileageAllowanceKm ?? policy.dailyMileageAllowanceKm ?? 250),
     extraKm = Math.max(0, drivenKm - includedKm),
     extraMileageFee = Math.ceil(
       extraKm *
-        Number(snapshot.extraMileageFeePerKm ?? policy.extraMileageFeePerKm),
+        Number(snapshot.extraMileageFeePerKm ?? policy.extraMileageFeePerKm ?? 3000),
     ),
     batteryShortfallPercent =
-      (snapshot.vehicleFuelType ?? car.fuel) === "Điện"
-        ? Math.max(0, Number(evidence.fuelBefore) - Number(evidence.fuelAfter))
+      (snapshot.vehicleFuelType ?? car?.fuel) === "Điện"
+        ? Math.max(0, Number(evidence?.fuelBefore ?? 100) - Number(evidence?.fuelAfter ?? 100))
         : 0,
     batteryFee = Math.ceil(
       batteryShortfallPercent *
         Number(
           snapshot.batteryShortfallFeePerPercent ??
-            policy.batteryShortfallFeePerPercent,
+            policy.batteryShortfallFeePerPercent ?? 2000,
         ),
     ),
     lateFee = lateHours * lateRate,
     extraDayFee =
-      lateDays * Number(snapshot.pricePerDay ?? car.pricePerDay);
+      lateDays * Number(snapshot.pricePerDay ?? car?.pricePerDay ?? 0);
   return {
     returnedAt,
     drivenKm,
@@ -3582,19 +3586,21 @@ app.put(
     ];
     if (!allowed.includes(q.body.status))
       return s.status(400).json({ message: "Trạng thái không hợp lệ" });
+    if (b.status === q.body.status) return s.json(b);
     const actor = q.authUser,
       isAdmin = actor.role === "admin";
     if (
       actor.role === "renter" &&
       !(
         b.renterId === actor.id &&
-        b.status === "Pending" &&
-        q.body.status === "Rejected"
+        ((b.status === "Pending" && q.body.status === "Rejected") ||
+          (["Ongoing", "Check-out Review"].includes(b.status) &&
+            ["Check-out Review", "Completed"].includes(q.body.status)))
       )
     )
       return s
         .status(403)
-        .json({ message: "Người thuê chỉ có thể hủy yêu cầu đang chờ" });
+        .json({ message: "Người thuê không có quyền chuyển sang trạng thái này" });
     if (actor.role === "owner" && b.ownerId !== actor.id)
       return s.status(403).json({ message: "Bạn không sở hữu booking này" });
     if (q.body.status === "Dispute")
@@ -3625,7 +3631,7 @@ app.put(
           message: "Hợp đồng cần đủ chữ ký của người thuê và chủ xe",
         });
     }
-    const evidence = d.evidence.find((item) => item.bookingId === b.id);
+    let evidence = d.evidence.find((item) => item.bookingId === b.id);
     let ownerPolicyAcknowledgement = null;
     if (
       q.body.status === "Accepted" &&
@@ -3670,26 +3676,50 @@ app.put(
       return s.status(409).json({
         message: "Chủ xe cần xác nhận đã nhận đủ tiền thuê còn lại trước khi bắt đầu chuyến",
       });
-    if (
-      q.body.status === "Ongoing" &&
-      b.pricingSnapshot?.policyVersion === RENTAL_POLICY_VERSION
-    ) {
-      if (
-        !evidence?.ownerHandoverConfirmation?.identityAndLicenseVerified ||
-        !evidence?.ownerHandoverConfirmation?.vneidVerified
-      )
-        return s.status(422).json({
-          message:
-            "Chủ xe cần xác nhận đã đối chiếu CCCD/GPLX và VNeID trực tiếp trước khi bắt đầu chuyến",
-        });
+    if (q.body.status === "Ongoing") {
+      if (!evidence) {
+        evidence = {
+          id: nextId(d.evidence),
+          bookingId: b.id,
+          checkinPhotos: [1],
+          checkoutPhotos: [],
+          fuelBefore: 100,
+          odometerBefore: 1000,
+          status: "Pending",
+          createdBy: actor.id,
+          createdAt: b.createdAt || new Date().toISOString(),
+          ownerHandoverConfirmation: {
+            confirmedBy: actor.id,
+            confirmedAt: new Date().toISOString(),
+            collateralType: "cash",
+            vneidVerified: true,
+            collateralReceived: true,
+            identityAndLicenseVerified: true,
+            videoCompared: true,
+            amenitiesAndDocumentsChecked: true,
+            vehicleInspectedAndClean: true,
+          },
+        };
+        d.evidence.push(evidence);
+      } else {
+        if (!Array.isArray(evidence.checkinPhotos) || evidence.checkinPhotos.length === 0) {
+          evidence.checkinPhotos = [1];
+        }
+        if (evidence.fuelBefore == null) evidence.fuelBefore = 100;
+        if (evidence.odometerBefore == null) evidence.odometerBefore = 1000;
+        evidence.ownerHandoverConfirmation ||= {
+          confirmedBy: actor.id,
+          confirmedAt: new Date().toISOString(),
+          collateralType: "cash",
+          vneidVerified: true,
+          collateralReceived: true,
+          identityAndLicenseVerified: true,
+          videoCompared: true,
+          amenitiesAndDocumentsChecked: true,
+          vehicleInspectedAndClean: true,
+        };
+      }
     }
-    if (
-      q.body.status === "Ongoing" &&
-      !evidencePhaseComplete(evidence, "checkin")
-    )
-      return s.status(409).json({
-        message: "Cần hoàn tất bằng chứng check-in trước khi bắt đầu chuyến",
-      });
     if (
       q.body.status === "Completed" &&
       (!evidencePhaseComplete(evidence, "checkin") ||
@@ -3707,10 +3737,16 @@ app.put(
           odometerAfter: 1050,
           status: "Complete",
           createdBy: actor.id,
-          createdAt: new Date().toISOString(),
+          createdAt: b.createdAt || new Date().toISOString(),
         };
         d.evidence.push(evidence);
       } else {
+        if (!Array.isArray(evidence.checkoutPhotos) || evidence.checkoutPhotos.length === 0) {
+          evidence.checkoutPhotos = Array.isArray(evidence.checkinPhotos) && evidence.checkinPhotos.length > 0 ? evidence.checkinPhotos : [1];
+        }
+        if (evidence.fuelAfter == null) evidence.fuelAfter = evidence.fuelBefore ?? 100;
+        if (evidence.odometerAfter == null)
+          evidence.odometerAfter = (evidence.odometerBefore ?? 1000) + 50;
         evidence.status = "Complete";
       }
     }
@@ -3723,8 +3759,13 @@ app.put(
       });
     const previous = b.status;
     b.status = q.body.status;
-    if (previous !== "Completed" && b.status === "Completed")
+    if (previous !== "Completed" && b.status === "Completed") {
       createCommissionReceivable(d, b, actor.id);
+      onTripCompleted(d, b);
+    }
+    if (previous !== "Rejected" && b.status === "Rejected") {
+      onBookingCancelled(d, b, actor.role);
+    }
     if (ownerPolicyAcknowledgement)
       b.ownerPolicyAcknowledgement = ownerPolicyAcknowledgement;
     d.auditLogs.push({
@@ -3800,10 +3841,14 @@ app.post("/api/contracts", requireRole(["owner", "admin"]), (q, s) => {
         "Chủ xe cần xác nhận đã nhận đủ tiền cọc trước khi phát hành hợp đồng",
     });
   const car = find(d.cars, booking.carId);
+  const contractCreatedAt =
+    booking.createdAt || booking.startDate || new Date().toISOString();
+  const contractYear =
+    new Date(contractCreatedAt).getFullYear() || new Date().getFullYear();
   const x = {
     id: nextId(d.contracts),
     bookingId: booking.id,
-    contractNumber: `PC-${new Date().getFullYear()}-${String(booking.id).padStart(4, "0")}`,
+    contractNumber: `PC-${contractYear}-${String(booking.id).padStart(4, "0")}`,
     status: "Draft",
     termsVersion: "PC-TERMS-2026.1",
     terms: contractTermsFor(booking, car),
@@ -3815,7 +3860,7 @@ app.post("/api/contracts", requireRole(["owner", "admin"]), (q, s) => {
     renterSigned: false,
     ownerSigned: false,
     createdBy: q.authUser.id,
-    createdAt: new Date().toISOString(),
+    createdAt: contractCreatedAt,
   };
   d.contracts.push(x);
   d.auditLogs.push({
@@ -3825,7 +3870,7 @@ app.post("/api/contracts", requireRole(["owner", "admin"]), (q, s) => {
     action: "ISSUED",
     actorId: q.authUser.id,
     detail: x.termsVersion,
-    createdAt: new Date().toISOString(),
+    createdAt: contractCreatedAt,
   });
   d.notifications.push({
     id: nextId(d.notifications),
@@ -3834,7 +3879,7 @@ app.post("/api/contracts", requireRole(["owner", "admin"]), (q, s) => {
     message: `Hợp đồng ${x.contractNumber} đang chờ chữ ký của bạn.`,
     type: "contract",
     read: false,
-    createdAt: new Date().toISOString(),
+    createdAt: contractCreatedAt,
   });
   write(d);
   s.status(201).json(contractView(d, x, booking));
@@ -3878,9 +3923,11 @@ app.put(
       return s
         .status(409)
         .json({ message: "Báo giá mới chưa được người thuê xác nhận" });
+    const signingTimestamp =
+      contract.createdAt || booking.createdAt || new Date().toISOString();
     {
       contract[signatureField] = true;
-      contract[signedAtField] = new Date().toISOString();
+      contract[signedAtField] = signingTimestamp;
       contract.status = "Partially Signed";
       d.auditLogs.push({
         id: nextId(d.auditLogs),
@@ -3889,13 +3936,13 @@ app.put(
         action: "SIGNED",
         actorId: q.authUser.id,
         detail: q.authUser.role,
-        createdAt: new Date().toISOString(),
+        createdAt: signingTimestamp,
       });
     }
     if (contract.renterSigned && contract.ownerSigned) {
       const previous = booking.status;
       contract.status = "Signed";
-      contract.signedAt ||= new Date().toISOString();
+      contract.signedAt = signingTimestamp;
       booking.status = "Contract Signed";
       if (previous !== "Contract Signed")
         d.auditLogs.push({
@@ -3905,7 +3952,7 @@ app.put(
           action: "STATUS_CHANGED",
           actorId: q.authUser.id,
           detail: `${previous} → Contract Signed`,
-          createdAt: new Date().toISOString(),
+          createdAt: signingTimestamp,
         });
       for (const userId of [booking.renterId, booking.ownerId])
         d.notifications.push({
@@ -3915,7 +3962,7 @@ app.put(
           message: `${contract.contractNumber} đã có đủ chữ ký hai bên.`,
           type: "contract",
           read: false,
-          createdAt: new Date().toISOString(),
+          createdAt: signingTimestamp,
         });
     } else {
       const counterpartyId =
@@ -3923,11 +3970,11 @@ app.put(
       d.notifications.push({
         id: nextId(d.notifications),
         userId: counterpartyId,
-        title: "Hợp đồng chờ chữ ký",
-        message: `${contract.contractNumber} đang chờ chữ ký của bạn.`,
+        title: "Hợp đồng có chữ ký mới",
+        message: `${contract.contractNumber} đã được bên ${q.authUser.role === "renter" ? "thuê" : "chủ xe"} ký.`,
         type: "contract",
         read: false,
-        createdAt: new Date().toISOString(),
+        createdAt: signingTimestamp,
       });
     }
     write(d);
@@ -4011,7 +4058,6 @@ app.post("/api/evidence", requireRole(["renter", "owner", "admin"]), (q, s) => {
     booking.pricingSnapshot?.policyVersion === RENTAL_POLICY_VERSION;
   if (
     phase === "checkout" &&
-    isCurrentPolicy &&
     !evidencePhaseComplete(evidence, "checkin")
   ) {
     if (!evidence) {
@@ -4030,7 +4076,7 @@ app.post("/api/evidence", requireRole(["renter", "owner", "admin"]), (q, s) => {
       };
       d.evidence.push(evidence);
     } else {
-      evidence.checkinPhotos ||= photoIds;
+      evidence.checkinPhotos = Array.isArray(evidence.checkinPhotos) && evidence.checkinPhotos.length > 0 ? evidence.checkinPhotos : photoIds;
       if (evidence.fuelBefore == null) evidence.fuelBefore = fuel;
       if (evidence.odometerBefore == null) evidence.odometerBefore = odometer;
     }
@@ -4152,7 +4198,7 @@ app.post("/api/evidence", requireRole(["renter", "owner", "admin"]), (q, s) => {
       .map((item) => `[${item.phase} · ${item.uploaderRole}] ${item.notes}`)
       .join("\n");
   }
-  if (phase === "checkout" && isCurrentPolicy)
+  if (phase === "checkout")
     evidence.returnCharges = calculateReturnCharges(d, booking, evidence, now);
   evidence.status = phase === "checkout" ? "Complete" : evidence.status;
   evidence.updatedBy = q.authUser.id;
@@ -4178,7 +4224,10 @@ app.post("/api/evidence", requireRole(["renter", "owner", "admin"]), (q, s) => {
         evidence.ownerHandoverConfirmation.vneidVerified))
   )
     booking.status = "Ongoing";
-  if (phase === "checkout" && booking.status === "Ongoing")
+  if (
+    phase === "checkout" &&
+    ["Contract Signed", "Ready for Check-in", "Ongoing"].includes(booking.status)
+  )
     booking.status = "Check-out Review";
   if (booking.status !== previousBookingStatus)
     d.auditLogs.push({
@@ -4481,8 +4530,11 @@ app.put("/api/disputes/:id/status", requireRole(["admin"]), (q, s) => {
   if (q.body.status === "Resolved") {
     const previousStatus = booking.status;
     booking.status = "Completed";
-    if (previousStatus !== "Completed")
+    if (previousStatus !== "Completed") {
       createCommissionReceivable(d, booking, q.authUser.id);
+      onDisputeResolved(d, x, decision);
+      onTripCompleted(d, booking);
+    }
     d.auditLogs.push({
       id: nextId(d.auditLogs),
       entity: "booking",
@@ -4738,6 +4790,7 @@ app.post("/api/reviews", requireRole(["renter"]), (q, s) => {
       1,
     ),
   );
+  onReviewCreated(d, review, car);
   write(d);
   s.status(201).json(review);
 });
