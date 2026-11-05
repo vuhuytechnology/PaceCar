@@ -54,7 +54,8 @@ app.use(
     origin: (process.env.CLIENT_ORIGIN || "http://localhost:5173").split(","),
   }),
 );
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use((req, res, next) => {
   const originalEnd = res.end;
   let ending = false;
@@ -460,7 +461,7 @@ const storage = multer.diskStorage({
 });
 const carUpload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024, files: 10 },
+  limits: { fileSize: 50 * 1024 * 1024, files: 10 },
   fileFilter: (req, file, cb) => {
     const allowed = ["image/jpeg", "image/png", "image/webp"];
     allowed.includes(file.mimetype)
@@ -477,7 +478,7 @@ const documentStorage = multer.diskStorage({
 });
 const documentUpload = multer({
   storage: documentStorage,
-  limits: { fileSize: 8 * 1024 * 1024, files: 3 },
+  limits: { fileSize: 50 * 1024 * 1024, files: 3 },
   fileFilter: (req, file, cb) =>
     ["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(
       file.mimetype,
@@ -494,7 +495,7 @@ const evidenceStorage = multer.diskStorage({
 });
 const evidenceUpload = multer({
   storage: evidenceStorage,
-  limits: { fileSize: 5 * 1024 * 1024, files: 6 },
+  limits: { fileSize: 50 * 1024 * 1024, files: 6 },
   fileFilter: (req, file, cb) =>
     imageExtensions[file.mimetype]
       ? cb(null, true)

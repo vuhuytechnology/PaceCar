@@ -841,7 +841,7 @@ export function CarListingWizard() {
                     {uploading ? "Đang tải lên..." : "Chọn ảnh xe"}
                   </b>
                   <span className="text-xs">
-                    JPG, PNG, WEBP, HEIC/HEIF (tự chuyển JPEG) · tối đa 5
+                    JPG, PNG, WEBP, HEIC/HEIF (tự chuyển JPEG) · tối đa 50
                     MB/ảnh sau chuyển đổi
                   </span>
                   <input
@@ -914,7 +914,7 @@ export function CarListingWizard() {
                     <span className="text-xs text-slate-500">
                       {doc
                         ? doc.name
-                        : "Ảnh JPG, PNG, WEBP, HEIC/HEIF hoặc PDF · tối đa 8 MB"}
+                        : "Ảnh JPG, PNG, WEBP, HEIC/HEIF hoặc PDF · tối đa 50 MB"}
                     </span>
                     <input
                       type="file"
