@@ -177,6 +177,21 @@ try {
   assert.equal(adminDashboard.status, 200);
   assert.ok(Array.isArray(adminDashboard.body.disputes));
   assert.ok(adminDashboard.body.users.every((user) => !("passwordHash" in user)));
+  const visibleAccountEmails = new Set([
+    "minhpghe170169@fpt.edu.vn",
+    "dungnmhe171319@fpt.edu.vn",
+    "manhdung.nmd1107@gmail.com",
+    "duyhieungo123@gmail.com",
+    "trucngo2303@gmail.com",
+    "niaofein142@gmail.com",
+    "anhnguyenquoc2005@gmail.com",
+  ]);
+  assert.ok(
+    adminDashboard.body.users.every((user) =>
+      visibleAccountEmails.has(user.email.toLowerCase()),
+    ),
+  );
+  assert.equal(adminDashboard.body.stats.users, adminDashboard.body.users.length);
   assert.equal(
     (await request("/dashboard/admin", { token: renter })).status,
     403,

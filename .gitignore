@@ -8,3 +8,8 @@ server/uploads/
 .env
 ~$*
 ~*.tmp
+__pycache__/
+*.pyc
+rel_vaccum/
+docs/ppt_render_en/
+docs/ppt_render_review/

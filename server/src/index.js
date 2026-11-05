@@ -137,6 +137,23 @@ const publicUser = (user) =>
         ].includes(key),
     ),
   );
+const ADMIN_VISIBLE_ACCOUNT_EMAILS = new Set([
+  "minhpghe170169@fpt.edu.vn",
+  "dungnmhe171319@fpt.edu.vn",
+  "manhdung.nmd1107@gmail.com",
+  "duyhieungo123@gmail.com",
+  "trucngo2303@gmail.com",
+  "niaofein142@gmail.com",
+  "anhnguyenquoc2005@gmail.com",
+]);
+const adminVisibleUsers = (users) =>
+  users.filter((user) =>
+    ADMIN_VISIBLE_ACCOUNT_EMAILS.has(
+      String(user.email || "")
+        .trim()
+        .toLowerCase(),
+    ),
+  );
 const publicOwnerSummary = (user) =>
   user && {
     id: user.id,
@@ -4940,6 +4957,7 @@ app.get(
 app.get("/api/dashboard/admin", requireRole(["admin"]), (q, s) => {
   const d = read();
   const commissions = commissionTotals(d);
+  const visibleUsers = adminVisibleUsers(d.users);
   const projectedStatuses = new Set([
       "Accepted",
       "Deposit Required",
@@ -4956,9 +4974,9 @@ app.get("/api/dashboard/admin", requireRole(["admin"]), (q, s) => {
     bookings: d.bookings,
     disputes: d.disputes,
     auditLogs: d.auditLogs,
-    users: d.users.map(publicUser),
+    users: visibleUsers.map(publicUser),
     stats: {
-      users: d.users.length,
+      users: visibleUsers.length,
       cars: d.cars.length,
       bookings: d.bookings.length,
       revenue: revenueSettled,
