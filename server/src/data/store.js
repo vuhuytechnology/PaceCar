@@ -284,38 +284,6 @@ function migrateData(data) {
       createdAt: "2026-04-05T10:00:00.000Z",
     },
   ];
-  data.riskAlerts ||= [
-    {
-      id: 1,
-      ownerId: 4,
-      carId: 1,
-      type: "GPS_LOST",
-      severity: "High",
-      message: "Tín hiệu GPS bị gián đoạn",
-      status: "Open",
-      createdAt: "2026-07-11T08:30:00.000Z",
-    },
-    {
-      id: 2,
-      ownerId: 4,
-      bookingId: 2,
-      type: "RENTER_RISK",
-      severity: "Medium",
-      message: "Người thuê có mức rủi ro trung bình",
-      status: "Open",
-      createdAt: "2026-07-10T08:30:00.000Z",
-    },
-    {
-      id: 3,
-      ownerId: 4,
-      bookingId: 4,
-      type: "LONG_DURATION",
-      severity: "Medium",
-      message: "Thời gian thuê vượt mức thông thường",
-      status: "Resolved",
-      createdAt: "2026-07-08T08:30:00.000Z",
-    },
-  ];
   const defaultHandoverPoints = {
     "Hà Đông, Hà Nội": "Bến xe Yên Nghĩa, Hà Đông",
     "Hòa Lạc, Hà Nội": "Khu công nghệ cao Hòa Lạc",

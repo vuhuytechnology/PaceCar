@@ -44,7 +44,7 @@ Các màn hình nên kiểm thử:
 - Trang chủ, tìm kiếm và lọc xe.
 - Người thuê: yêu thích, báo giá, mã ưu đãi, tạo đơn thuê, hợp đồng và bằng chứng.
 - Chủ xe: đăng xe, quản lý tin và xử lý yêu cầu thuê.
-- Admin: dashboard, duyệt tin xe, cảnh báo rủi ro và quản lý ưu đãi tại `/admin/promotions`.
+- Admin: dashboard, duyệt tin xe, trung tâm tranh chấp và quản lý ưu đãi tại `/admin/promotions`.
 - Footer: Tìm xe, Cách hoạt động và Hỗ trợ tranh chấp.
 
 ## 4. Kịch bản kiểm thử hành trình khách hàng

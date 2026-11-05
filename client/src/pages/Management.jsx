@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  AlertTriangle,
   CalendarDays,
   Car,
   CheckCircle2,
@@ -862,100 +861,6 @@ export function Profile() {
           </Button>
         </form>
       )}
-    </DashboardShell>
-  );
-}
-
-export function RiskAlerts() {
-  const { user } = useAuth(),
-    toast = useToast();
-  const [items, setItems] = useState(null),
-    [error, setError] = useState(""),
-    [resolvingId, setResolvingId] = useState(null);
-  const load = () => {
-    setError("");
-    return api(
-      `/risk-alerts${user.role === "owner" ? `?ownerId=${user.id}` : ""}`,
-    )
-      .then(setItems)
-      .catch((requestError) => setError(requestError.message));
-  };
-  useEffect(() => {
-    load();
-  }, [user.id]);
-  if (error) return <ErrorState message={error} onRetry={load} />;
-  if (!items) return <PageLoading />;
-  async function resolve(id) {
-    setResolvingId(id);
-    try {
-      const targetStatus = user.role === "owner" ? "Acknowledged" : "Resolved";
-      await api(`/risk-alerts/${id}/status`, {
-        method: "PUT",
-        body: JSON.stringify({ status: targetStatus }),
-      });
-      toast.success(
-        user.role === "owner"
-          ? "Đã xác nhận xem cảnh báo"
-          : "Đã xử lý cảnh báo",
-      );
-      await load();
-    } catch (requestError) {
-      toast.error(requestError.message);
-    } finally {
-      setResolvingId(null);
-    }
-  }
-  return (
-    <DashboardShell role={user.role}>
-      <PageHead
-        eyebrow="Risk Control"
-        title="Cảnh báo rủi ro"
-        desc="Theo dõi GPS, hồ sơ người thuê và các chuyến có dấu hiệu bất thường."
-      />
-      <div className="card p-5">
-        {items.length ? (
-          items.map((a) => (
-            <div
-              className="flex flex-col gap-4 border-b py-5 last:border-0 sm:flex-row sm:items-center"
-              key={a.id}
-            >
-              <span
-                className={`grid h-12 w-12 place-items-center rounded-xl ${a.severity === "High" ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}
-              >
-                <AlertTriangle />
-              </span>
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <b>{a.type}</b>
-                  <StatusBadge status={a.status} />
-                </div>
-                <p className="mt-1 text-sm text-slate-500">
-                  {a.message} · {date(a.createdAt)}
-                </p>
-              </div>
-              {a.status !== "Resolved" &&
-                !(user.role === "owner" && a.status === "Acknowledged") && (
-                  <Button
-                    variant="outline"
-                    disabled={resolvingId === a.id}
-                    onClick={() => resolve(a.id)}
-                  >
-                    <CheckCircle2 size={17} />
-                    {user.role === "owner"
-                      ? "Xác nhận đã xem"
-                      : "Đánh dấu đã xử lý"}
-                  </Button>
-                )}
-            </div>
-          ))
-        ) : (
-          <EmptyState
-            icon={CheckCircle2}
-            title="Không có cảnh báo"
-            desc="Mọi hoạt động hiện trong mức an toàn."
-          />
-        )}
-      </div>
     </DashboardShell>
   );
 }

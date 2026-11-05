@@ -4795,47 +4795,6 @@ app.post("/api/reviews", requireRole(["renter"]), (q, s) => {
   write(d);
   s.status(201).json(review);
 });
-app.get("/api/risk-alerts", requireRole(["owner", "admin"]), (q, s) => {
-  const d = read();
-  let alerts = d.riskAlerts;
-  if (q.authUser.role === "owner")
-    alerts = alerts.filter((a) => a.ownerId === q.authUser.id);
-  else if (q.query.ownerId)
-    alerts = alerts.filter((a) => a.ownerId === +q.query.ownerId);
-  if (q.query.status)
-    alerts = alerts.filter((a) => a.status === q.query.status);
-  s.json(alerts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
-});
-app.put(
-  "/api/risk-alerts/:id/status",
-  requireRole(["owner", "admin"]),
-  (q, s) => {
-    const d = read(),
-      alert = find(d.riskAlerts, q.params.id);
-    if (!alert)
-      return s.status(404).json({ message: "Không tìm thấy cảnh báo" });
-    if (q.authUser.role === "owner" && alert.ownerId !== q.authUser.id)
-      return s
-        .status(403)
-        .json({ message: "Bạn không có quyền cập nhật cảnh báo này" });
-    const allowedStatuses =
-      q.authUser.role === "owner"
-        ? ["Acknowledged"]
-        : ["Open", "Acknowledged", "Resolved"];
-    if (!allowedStatuses.includes(q.body.status))
-      return s.status(q.authUser.role === "owner" ? 403 : 400).json({
-        message:
-          q.authUser.role === "owner"
-            ? "Chủ xe chỉ có thể xác nhận đã xem cảnh báo"
-            : "Trạng thái cảnh báo không hợp lệ",
-      });
-    alert.status = q.body.status;
-    alert.updatedBy = q.authUser.id;
-    alert.updatedAt = new Date().toISOString();
-    write(d);
-    s.json(alert);
-  },
-);
 const enriched = (d, b) => ({
   ...b,
   reviewed: d.reviews.some((review) => review.bookingId === b.id),
@@ -4918,7 +4877,6 @@ app.get("/api/dashboard/owner/:id", requireRole(["owner", "admin"]), (q, s) => {
         )
         .reduce((sum, b) => sum + Number(b.totalPrice || 0), 0),
     })),
-    alerts: d.riskAlerts.filter((a) => a.ownerId === +q.params.id),
     calendar: bookings
       .filter((b) => b.status !== "Rejected")
       .map((b) => ({
@@ -4997,7 +4955,6 @@ app.get("/api/dashboard/admin", requireRole(["admin"]), (q, s) => {
     cars: d.cars,
     bookings: d.bookings,
     disputes: d.disputes,
-    riskAlerts: d.riskAlerts,
     auditLogs: d.auditLogs,
     users: d.users.map(publicUser),
     stats: {
@@ -5019,7 +4976,6 @@ app.get("/api/dashboard/admin", requireRole(["admin"]), (q, s) => {
           "Check-out Review",
         ].includes(b.status),
       ).length,
-      openAlerts: d.riskAlerts.filter((a) => a.status !== "Resolved").length,
     },
   });
 });

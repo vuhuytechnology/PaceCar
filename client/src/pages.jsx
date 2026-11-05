@@ -222,7 +222,7 @@ export function Landing() {
     [ShieldCheck, "Giá minh bạch", "Mọi chi phí được hiển thị trước khi đặt xe.", "border-b-[0.8px] sm:border-r-[0.8px]"],
     [CheckCircle2, "Xe & chủ xe xác thực", "Hồ sơ và giấy tờ được đối soát rõ ràng.", "border-b-[0.8px]"],
     [FileSignature, "Hợp đồng số", "Điều khoản rõ ràng, ký kết thuận tiện.", "border-b-[0.8px] sm:border-b-0 sm:border-r-[0.8px]"],
-    [Gauge, "GPS & cảnh báo rủi ro", "Theo dõi hành trình và phát hiện bất thường.", "border-b-[0.8px] sm:border-b-0"],
+    [Camera, "Bằng chứng giao nhận", "Ảnh, nhiên liệu và số km được ghi nhận trước và sau chuyến.", "border-b-[0.8px] sm:border-b-0"],
     [Clock3, "Hỗ trợ tranh chấp 24–72h", "Quy trình dựa trên bằng chứng, công bằng.", "sm:border-t-[0.8px] sm:col-span-2"],
   ];
   const steps = [
@@ -3292,29 +3292,6 @@ function LegacyOwnerDashboard() {
           )}
         </div>
         <div className="space-y-4">
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
-            <h3 className="flex items-center gap-2 font-bold text-amber-800">
-              <AlertTriangle /> Cảnh báo rủi ro
-            </h3>
-            {data.alerts?.length ? (
-              data.alerts.slice(0, 3).map((alert) => (
-                <div
-                  className="mt-3 rounded-xl bg-white/70 p-3 text-sm"
-                  key={alert.id}
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <b>{alert.type}</b>
-                    <StatusBadge status={alert.status} />
-                  </div>
-                  <p className="mt-1 text-amber-900/70">{alert.message}</p>
-                </div>
-              ))
-            ) : (
-              <p className="mt-3 text-sm text-amber-800/70">
-                Không có cảnh báo đang mở.
-              </p>
-            )}
-          </div>
           <div className="card p-5">
             <h3 className="font-bold">Lịch đặt xe</h3>
             <div className="mt-4 space-y-3">

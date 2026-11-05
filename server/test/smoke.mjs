@@ -173,11 +173,9 @@ try {
   assert.equal(ownerDashboard.status, 200);
   assert.ok(Array.isArray(ownerDashboard.body.cars));
   assert.ok(Array.isArray(ownerDashboard.body.calendar));
-  assert.ok(Array.isArray(ownerDashboard.body.alerts));
   const adminDashboard = await request("/dashboard/admin", { token: admin });
   assert.equal(adminDashboard.status, 200);
   assert.ok(Array.isArray(adminDashboard.body.disputes));
-  assert.ok(Array.isArray(adminDashboard.body.riskAlerts));
   assert.ok(adminDashboard.body.users.every((user) => !("passwordHash" in user)));
   assert.equal(
     (await request("/dashboard/admin", { token: renter })).status,
@@ -202,23 +200,8 @@ try {
     "Expired",
   );
 
-  const forbiddenRiskAlerts = await request("/risk-alerts", { token: renter });
-  assert.equal(forbiddenRiskAlerts.status, 403);
-  const ownerRiskAlerts = await request("/risk-alerts", { token: owner });
-  assert.equal(ownerRiskAlerts.status, 200);
-  assert.ok(ownerRiskAlerts.body.every((item) => item.ownerId === 4));
-  const acknowledgedAlert = await request("/risk-alerts/1/status", {
-    method: "PUT",
-    token: owner,
-    body: JSON.stringify({ status: "Acknowledged" }),
-  });
-  assert.equal(acknowledgedAlert.status, 200);
-  const resolvedAlert = await request("/risk-alerts/2/status", {
-    method: "PUT",
-    token: admin,
-    body: JSON.stringify({ status: "Resolved" }),
-  });
-  assert.equal(resolvedAlert.status, 200);
+  const removedRiskAlerts = await request("/risk-alerts", { token: owner });
+  assert.equal(removedRiskAlerts.status, 404);
 
   const registrationInput = {
     name: "QA Renter",
@@ -1673,7 +1656,7 @@ try {
   assert.equal(duplicateActivePlate.body.message, "Biển số xe đã tồn tại");
 
   console.log(
-    "PaceCar API end-to-end tests passed (search and filters, car details, server-side quotes, role dashboards, bookings, payment, contracts, check-in/out evidence, reviews, disputes, listings, promotions, trust, and risk alerts).",
+    "PaceCar API end-to-end tests passed (search and filters, car details, server-side quotes, role dashboards, bookings, payment, contracts, check-in/out evidence, reviews, disputes, listings, promotions, and trust).",
   );
 } finally {
   if (server.exitCode === null) {

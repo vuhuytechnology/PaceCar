@@ -11,7 +11,7 @@ PaceCar là ứng dụng demo marketplace kết nối người thuê xe và ch�
 - Tạo QR chuyển khoản tiền cọc đến tài khoản của chủ xe; chủ xe xác nhận thủ công sau khi đối soát ngân hàng.
 - Quy trình đặt xe theo vai trò: người thuê, chủ xe và quản trị viên.
 - Đăng xe, duyệt tin, quản lý hợp đồng, biên bản giao nhận và tranh chấp.
-- Thông báo, nhật ký hoạt động, đánh giá và cảnh báo rủi ro.
+- Thông báo, nhật ký hoạt động, đánh giá và bằng chứng giao nhận.
 - Trust Score và Risk Level được tính theo quy tắc, không phải AI.
 
 ## Công nghệ

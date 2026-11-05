@@ -900,17 +900,11 @@ export function DashboardShell({ role, children }) {
               <Wallet size={18} />{" "}
               {role === "renter" ? "Trust Score" : "Tài chính"}
             </Link>
-            <NavLink
-              to={
-                role === "owner" || role === "admin" ? "/risk-alerts" : "/cars"
-              }
-              className={navClass}
-            >
-              <Car size={18} />{" "}
-              {role === "owner" || role === "admin"
-                ? "Cảnh báo rủi ro"
-                : "Khám phá xe"}
-            </NavLink>
+            {role === "renter" && (
+              <NavLink to="/cars" className={navClass}>
+                <Car size={18} /> Khám phá xe
+              </NavLink>
+            )}
             <NavLink to="/profile" className={navClass}>
               <User size={18} /> Hồ sơ
             </NavLink>

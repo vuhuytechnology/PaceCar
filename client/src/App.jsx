@@ -32,7 +32,6 @@ const FavoritesPage = lazyNamed(
 );
 const MyBookings = lazyNamed(() => import("./pages/Management"), "MyBookings");
 const Profile = lazyNamed(() => import("./pages/Management"), "Profile");
-const RiskAlerts = lazyNamed(() => import("./pages/Management"), "RiskAlerts");
 const AdminCarApprovals = lazyNamed(
   () => import("./pages/Listing"),
   "AdminCarApprovals",
@@ -215,14 +214,6 @@ export default function App() {
             element={
               <RequireRole>
                 <Profile />
-              </RequireRole>
-            }
-          />
-          <Route
-            path="/risk-alerts"
-            element={
-              <RequireRole role={["owner", "admin"]}>
-                <RiskAlerts />
               </RequireRole>
             }
           />
